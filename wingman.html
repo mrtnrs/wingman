@@ -1,0 +1,2234 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Pure Three.js Flight Sim V10.9 - Spitfire Model & Spawn</title>
+    <style>
+        /* --- CSS (Unchanged) --- */
+        body { margin: 0; overflow: hidden; background-color: #000; } canvas { display: block; cursor: none; }
+        .ui-overlay { z-index: 5; position: absolute; top: 0; left: 0; width: 100%; height: 100%; color: white; font-family: 'Consolas', 'Lucida Console', monospace; font-size: 16px; pointer-events: none; text-shadow: 1px 1px 2px black; }
+        #hud { position: absolute; top: 15px; left: 15px; background-color: rgba(0,0,0,0.3); padding: 8px; border-radius: 4px; }
+        #crosshair { position: absolute; top: 50%; left: 50%; width: 20px; height: 20px; border: 1px solid rgba(255, 255, 255, 0.7); border-radius: 50%; transform: translate(-50%, -50%); box-sizing: border-box; }
+        #crosshair::before, #crosshair::after { content: ''; position: absolute; background-color: rgba(255, 255, 255, 0.7); }
+        #crosshair::before { width: 1px; height: 7px; left: 50%; top: -8px; transform: translateX(-50%);} #crosshair::after { width: 7px; height: 1px; top: 50%; left: -8px; transform: translateY(-50%);}
+        #crosshair span { position: absolute; background-color: rgba(255, 255, 255, 0.7); } #crosshair .right { width: 7px; height: 1px; top: 50%; right: -8px; transform: translateY(-50%);} #crosshair .bottom { width: 1px; height: 7px; left: 50%; bottom: -8px; transform: translateX(-50%);}
+        #cooldown-bar-container { position: absolute; bottom: 20px; left: 50%; transform: translateX(-50%); width: 200px; height: 15px; background-color: rgba(50, 50, 50, 0.7); border: 1px solid #fff; border-radius: 3px; overflow: hidden; }
+        #cooldown-bar { width: 100%; height: 100%; background-color: #4CAF50; transition: width 0.05s linear; }
+        #game-over { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); background-color: rgba(0, 0, 0, 0.8); color: #ff4444; padding: 30px; border-radius: 10px; text-align: center; font-size: 24px; display: none; pointer-events: auto; cursor: pointer; z-index: 10;}
+        #hit-overlay { position: absolute; top: 0; left: 0; width: 100%; height: 100%; background-color: rgba(255, 0, 0, 0.5); opacity: 0; transition: opacity 0.1s ease-out; pointer-events: none; z-index: 6; }
+        #radar-container { position: absolute; bottom: 15px; right: 15px; width: 150px; height: 150px; border-radius: 50%; background-color: rgba(0, 30, 0, 0.5); border: 2px solid rgba(0, 255, 0, 0.4); overflow: hidden; box-shadow: 0 0 10px rgba(0, 255, 0, 0.3); }
+        #radar-blips { position: relative; width: 100%; height: 100%; }
+        .radar-blip { position: absolute; width: 5px; height: 5px; border-radius: 50%; background-color: #ff4444; box-shadow: 0 0 3px #ff0000; transform: translate(-50%, -50%); transition: opacity 0.5s linear; }
+        .radar-blip.bomber { background-color: #ff7700; box-shadow: 0 0 3px #ff5500; }
+        .radar-blip.bomb { background-color: #ffaa00; box-shadow: 0 0 3px #ff8800; width: 3px; height: 3px; }
+        #radar-player-arrow { position: absolute; top: 50%; left: 50%; width: 0; height: 0; border-left: 12px solid transparent; border-right: 12px solid transparent; border-bottom: 18px solid rgba(0, 200, 255, 0.7); transform-origin: center bottom; transform: translate(-50%, -100%) rotate(0deg); }
+        #sun-glare-overlay { position: absolute; top: 0; left: 0; width: 100%; height: 100%; background: radial-gradient(circle, rgba(255,255,220,0.5) 0%, rgba(255,255,220,0.0) 70%); opacity: 0; transition: opacity 0.2s linear; pointer-events: none; z-index: 7; }
+        #start-prompt { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); padding: 20px 40px; background-color: rgba(0, 0, 0, 0.7); color: #ffffff; font-size: 20px; font-family: sans-serif; border: 1px solid #fff; border-radius: 5px; text-align: center; z-index: 11; display: block; }
+        #bomber-warning { position: absolute; top: 20%; left: 50%; transform: translateX(-50%); background-color: rgba(255, 100, 0, 0.7); padding: 10px 20px; border-radius: 5px; font-size: 18px; display: none; animation: pulseWarning 1.5s infinite; }
+        @keyframes pulseWarning {
+            0% { opacity: 0.7; }
+            50% { opacity: 1; }
+            100% { opacity: 0.7; }
+        }
+    </style>
+</head>
+<body>
+    <!-- UI Elements -->
+    <div class="ui-overlay"> 
+        <div id="hud"> 
+            <div>Score: <span id="score">0</span></div> 
+            <div>Health: <span id="health">100</span>%</div> 
+            <div>Speed: <span id="speed">0</span> km/h</div> 
+            <div>Altitude: <span id="altitude">0</span> m</div> 
+            <div>Bombers: <span id="bomber-count">0</span></div>
+        </div> 
+        <div id="crosshair"> <span class="right"></span><span class="bottom"></span> </div> 
+        <div id="cooldown-bar-container"> <div id="cooldown-bar"></div> </div> 
+        <div id="game-over"> GAME OVER<br> Final Score: <span id="final-score">0</span><br> <small>[Click to Restart]</small> </div> 
+        <div id="bomber-warning">BOMBERS INBOUND!</div>
+    </div> 
+    <div id="hit-overlay"></div> 
+    <div id="sun-glare-overlay"></div>
+    <div id="radar-container"> <div id="radar-player-arrow"></div> <div id="radar-blips"></div> </div>
+    <div id="start-prompt">[ Click Anywhere to Start ]</div>
+
+    <script type="importmap"> { "imports": { "three": "https://unpkg.com/three@0.163.0/build/three.module.js" } } </script>
+
+    <script type="module">
+        import * as THREE from 'three';
+
+        // --- Game State, Core Three.js, Player Base Vars ---
+        let isGameOver = false; let score = 0; let planeHealth = 100; const MAX_HEALTH = 100;
+        let audioInitialized = false;
+        let scene, camera, renderer, clock; let originalCameraPos = new THREE.Vector3();
+        let airplane, propeller, gunFlash;
+        let currentPlaneVelocity = new THREE.Vector3(); let currentSpeedFactor = 1.0;
+        const cruiseSpeed = 550; const maxSpeedBoostFactor = 1.5; const minSpeedBrakeFactor = 0.6;
+        const boostForce = 1.0; const speedNormalizationRate = 0.45;
+        const visualSpeedMultiplier = 1.0;
+
+        // --- Arcade Control Dynamics ---
+        const pitchSpeed = 2.0; const yawSpeedArcade = 1.5; const controlDamping = 0.90;
+        const autoRollFactor = 1.5; const maxAutoRollAngle = Math.PI / 4;
+        let currentPitchRate = 0; let currentYawRate = 0;
+
+        // --- Gravity Speed Factor ---
+        const gravityFactor = 0.4;
+
+        // --- Controls Input ---
+        const mouse = new THREE.Vector2(); const keyStates = {};
+
+        // --- Weapons, Effects, Enemies, Targets, Environment ---
+        const bullets = []; const enemyBullets = []; const activeEffects = [];
+        const bulletSpeed = 750; const bulletLifetime = 2.8; const shootCooldown = 0.07;
+        let currentCooldown = 0; let isShooting = false;
+        let cameraShakeIntensity = 0; const cameraShakeDuration = 0.2; let currentShakeTime = 0;
+        let playerHitFlashTime = 0; const playerHitFlashDuration = 0.2;
+        let skyMesh, sunLight, sunSprite; const sunDirection = new THREE.Vector3(); const sunPosition = new THREE.Vector3();
+        const targets = []; const enemies = []; const bombers = []; const bombs = []; const cityFeatures = new THREE.Group();
+        let instancedBuildings, instancedBuildingsDark, instancedTreeTrunks, instancedTreeTops;
+        const targetRadius = 3; const targetValue = 100; const enemyValue = 150; const bomberValue = 250; const bombValue = 50;
+        const groundLevel = 0; const worldRadius = 2000;
+        const cityCenterRadiusSq = 750**2;
+        const minEnemies = 3; let spawnEnemyTimer = 0; const spawnEnemyDelay = 3.0;
+        const enemyDetectionRangeSq = 1000**2; const enemyAttackAngle = Math.PI / 3.0;
+        const enemyTurnSpeed = 1.1; const enemyShootCooldown = 1.1; const enemyBulletSpeed = 520; const enemyBulletDamage = 6;
+        const radarRange = 1200; const radarBlipDuration = 3.0;
+        let cameraDistance = 5;  // Start much closer
+        const minCameraDistance = 0.5;  // Can get extremely close
+        const maxCameraDistance = 50;   // Reasonable max distance
+
+        // Bomber squadron parameters
+        const minBombers = 3; // Minimum bombers per squadron
+        const maxBombers = 8; // Maximum bombers per squadron
+        const minEscorts = 1; // Minimum escort fighters per squadron
+        const maxEscorts = 3; // Maximum escort fighters per squadron
+        const bomberSpawnDelay = 15.0; // Time between bomber squadrons
+        let bomberSpawnTimer = 10.0; // Initial delay before first squadron
+        let bomberWarningTimer = 0;
+        let activeBomberSquadrons = 0;
+
+        // --- City Definition ---
+        const riverWidth = 25; const canalWidth = 40;
+        const riverCollisionPadding = riverWidth * 0.8;
+        const leiePoints = [ new THREE.Vector2(-worldRadius, 700), new THREE.Vector2(-1200, 500), new THREE.Vector2(-800, 250), new THREE.Vector2(-600, 100), new THREE.Vector2(-300, 50), new THREE.Vector2(-100, 20), new THREE.Vector2(-50, -10), new THREE.Vector2(0, -30), new THREE.Vector2(50, -80), new THREE.Vector2(150, -150), new THREE.Vector2(400, -300), new THREE.Vector2(700, -500), new THREE.Vector2(1000, -800), new THREE.Vector2(1400, -1200), new THREE.Vector2(worldRadius, -1500) ];
+        const scheldtPoints = [ new THREE.Vector2(worldRadius, 1200), new THREE.Vector2(1500, 900), new THREE.Vector2(1000, 600), new THREE.Vector2(600, 300), new THREE.Vector2(400, 150), new THREE.Vector2(200, 50), new THREE.Vector2(50, 0), new THREE.Vector2(0, -30), new THREE.Vector2(-100, -60), new THREE.Vector2(-300, -150), new THREE.Vector2(-600, -250), new THREE.Vector2(-900, -400), new THREE.Vector2(-1300, -600), new THREE.Vector2(-worldRadius, -800) ];
+        const canalPoints = [ new THREE.Vector2(300, worldRadius), new THREE.Vector2(320, 1200), new THREE.Vector2(350, 800), new THREE.Vector2(380, 400), new THREE.Vector2(400, 100), new THREE.Vector2(450, 50), new THREE.Vector2(550, 80), new THREE.Vector2(500, 150), new THREE.Vector2(420, 120), new THREE.Vector2(400, 100), new THREE.Vector2(390, -200), new THREE.Vector2(370, -500), new THREE.Vector2(350, -800), new THREE.Vector2(300, -1200), new THREE.Vector2(280, -worldRadius) ];
+        const allRiverPaths = [leiePoints, scheldtPoints, canalPoints];
+        const cityPolygon = [ new THREE.Vector2(-600, 500), new THREE.Vector2(100, 700), new THREE.Vector2(500, 600), new THREE.Vector2(800, 200), new THREE.Vector2(700, -300), new THREE.Vector2(400, -600), new THREE.Vector2(0, -700), new THREE.Vector2(-500, -600), new THREE.Vector2(-800, -200), new THREE.Vector2(-700, 300) ];
+
+        // --- Audio ---
+        let audioContext; let engineSound, engineGain, boostSoundGain;
+
+        // --- UI Elements ---
+        let scoreElement, healthElement, speedElement, altitudeElement, cooldownBarElement, gameOverElement, 
+            finalScoreElement, hitOverlayElement, radarBlipsContainer, radarPlayerArrow, sunGlareOverlay, 
+            startPromptElement, bomberWarningElement, bomberCountElement;
+
+        // --- Temp vectors ---
+        const _vector3 = new THREE.Vector3(); const _quat = new THREE.Quaternion(); const _matrix = new THREE.Matrix4();
+        const vecToEnemy = new THREE.Vector3(); const playerForwardRadar = new THREE.Vector3(); const playerRightRadar = new THREE.Vector3();
+        const cameraDirection = new THREE.Vector3();
+
+        // --- Helper Functions ---
+        function isPointInPolygon(px, pz, polygon) { let isInside = false; for (let i = 0, j = polygon.length - 1; i < polygon.length; j = i++) { const xi = polygon[i].x, zi = polygon[i].y; const xj = polygon[j].x, zj = polygon[j].y; const intersect = ((zi > pz) !== (zj > pz)) && (px < (xj - xi) * (pz - zi) / (zj - zi) + xi); if (intersect) isInside = !isInside; } return isInside; }
+        function pointToLineSegmentDistanceSq(px, pz, ax, az, bx, bz) { const l2 = (bx - ax) * (bx - ax) + (bz - az) * (bz - az); if (l2 === 0.0) return (px - ax) * (px - ax) + (pz - az) * (pz - az); let t = ((px - ax) * (bx - ax) + (pz - az) * (bz - az)) / l2; t = Math.max(0, Math.min(1, t)); const closestX = ax + t * (bx - ax); const closestZ = az + t * (bz - az); const dx = px - closestX; const dz = pz - closestZ; return dx * dx + dz * dz; }
+
+        // --- Initialization ---
+        function init() {
+            isGameOver = false; score = 0; planeHealth = MAX_HEALTH; currentSpeedFactor = 1.0; currentCooldown = 0; 
+            cameraShakeIntensity = 0; currentShakeTime = 0; playerHitFlashTime = 0; currentPitchRate = 0; currentYawRate = 0; 
+            spawnEnemyTimer = 10.0; bomberSpawnTimer = 10.0; activeBomberSquadrons = 0;
+            bullets.length = 0; enemyBullets.length = 0; targets.length = 0; enemies.length = 0; bombers.length = 0; 
+            bombs.length = 0; activeEffects.length = 0; cityFeatures.clear();
+            if (instancedBuildings) scene?.remove(instancedBuildings); if (instancedBuildingsDark) scene?.remove(instancedBuildingsDark); 
+            if (instancedTreeTrunks) scene?.remove(instancedTreeTrunks); if (instancedTreeTops) scene?.remove(instancedTreeTops); 
+            instancedBuildings = instancedBuildingsDark = instancedTreeTrunks = instancedTreeTops = null;
+
+            scene = new THREE.Scene(); clock = new THREE.Clock(); 
+            camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.01, 6000);
+            
+            // Initialize airplane object FIRST to set position/rotation
+            createAirplaneWW2_V2(); // Create the plane geometry/group
+
+            // Spawn Position & Rotation
+            const spawnOffset = worldRadius * 0.002;
+            const spawnY = 500;
+            airplane.position.set(-spawnOffset, spawnY, -spawnOffset);
+            airplane.lookAt(0, spawnY, 0);
+
+            camera.position.set(airplane.position.x + 5, airplane.position.y + 8, airplane.position.z + 10);
+            originalCameraPos.copy(camera.position);
+
+            renderer = new THREE.WebGLRenderer({ antialias: true, logarithmicDepthBuffer: true }); 
+            renderer.setSize(window.innerWidth, window.innerHeight); 
+            renderer.shadowMap.enabled = true; 
+            renderer.shadowMap.type = THREE.PCFSoftShadowMap; 
+            document.body.appendChild(renderer.domElement);
+            
+            setupLightingAndSun(); 
+            createGround(); 
+            createSky();
+            createInstancedGroundObjects(5000, 800);
+            createRivers(); 
+            createLandmarks(); 
+            createBridges(); 
+            scene.add(cityFeatures);
+            scene.add(airplane);
+            createTargets(50); 
+            createEnemies(minEnemies + 2); 
+            setupUIReferences(); 
+            gameOverElement.style.display = 'none'; 
+            hitOverlayElement.style.opacity = 0; 
+            sunGlareOverlay.style.opacity = 0;
+            bomberWarningElement.style.display = 'none';
+            startPromptElement.style.display = audioInitialized ? 'none' : 'block'; 
+            setupEventListeners(); 
+            animate();
+        }
+
+        // --- setupLightingAndSun, createSunTexture ---
+        function setupLightingAndSun() { 
+            scene.add(new THREE.AmbientLight(0xeeeeff, 1.1)); 
+            sunLight = new THREE.DirectionalLight(0xffffff, 3.5); 
+            sunLight.position.set(250, 300, 200); 
+            sunLight.castShadow = true; 
+            sunLight.shadow.mapSize.width = 2048; 
+            sunLight.shadow.mapSize.height = 2048; 
+            sunLight.shadow.camera.near = 50; 
+            sunLight.shadow.camera.far = 650; 
+            sunLight.shadow.camera.left = -300; 
+            sunLight.shadow.camera.right = 300; 
+            sunLight.shadow.camera.top = 300; 
+            sunLight.shadow.camera.bottom = -300; 
+            scene.add(sunLight); 
+            sunDirection.copy(sunLight.position).normalize(); 
+            sunPosition.copy(sunLight.position); 
+            const sunTexture = createSunTexture(); 
+            const sunMaterial = new THREE.SpriteMaterial({ 
+                map: sunTexture, 
+                color: 0xffffee, 
+                blending: THREE.AdditiveBlending, 
+                depthWrite: false, 
+                depthTest: false, 
+                transparent: true, 
+                opacity: 0.9 
+            }); 
+            sunSprite = new THREE.Sprite(sunMaterial); 
+            const sunDistance = 2500; 
+            sunSprite.position.copy(sunDirection).multiplyScalar(sunDistance); 
+            const sunScale = 150; 
+            sunSprite.scale.set(sunScale, sunScale, sunScale); 
+            scene.add(sunSprite); 
+        }
+        
+        function createSunTexture() { 
+            const canvas = document.createElement('canvas'); 
+            canvas.width = 128; 
+            canvas.height = 128; 
+            const context = canvas.getContext('2d'); 
+            const gradient = context.createRadialGradient(64, 64, 0, 64, 64, 64); 
+            gradient.addColorStop(0, 'rgba(255, 255, 220, 1)'); 
+            gradient.addColorStop(0.3, 'rgba(255, 220, 180, 0.6)'); 
+            gradient.addColorStop(1, 'rgba(255, 200, 100, 0)'); 
+            context.fillStyle = gradient; 
+            context.fillRect(0, 0, 128, 128); 
+            return new THREE.CanvasTexture(canvas); 
+        }
+
+        // --- createGround, createSky ---
+        function createGround() { 
+            const geo = new THREE.PlaneGeometry(worldRadius * 3, worldRadius * 3); 
+            const mat = new THREE.MeshStandardMaterial({ color: 0x7C9A60, side: THREE.DoubleSide, roughness: 0.95 }); 
+            const ground = new THREE.Mesh(geo, mat); 
+            ground.rotation.x = -Math.PI / 2; 
+            ground.position.y = groundLevel; 
+            ground.receiveShadow = true; 
+            scene.add(ground); 
+        }
+        
+        function createSky() { 
+            const skyGeo = new THREE.SphereGeometry(worldRadius * 2.5, 32, 15); 
+            const vs = `varying vec3 vWorldPosition; void main() { vec4 worldPosition = modelMatrix * vec4( position, 1.0 ); vWorldPosition = worldPosition.xyz; gl_Position = projectionMatrix * modelViewMatrix * vec4( position, 1.0 ); }`; 
+            const fs = `uniform vec3 topColor; uniform vec3 bottomColor; uniform float offset; uniform float exponent; varying vec3 vWorldPosition; void main() { float h = normalize( vWorldPosition + offset ).y; gl_FragColor = vec4( mix( bottomColor, topColor, max( pow( max( h , 0.0), exponent ), 0.0 ) ), 1.0 ); }`; 
+            const uniforms = { 
+                "topColor": { value: new THREE.Color(0x1a82ff) }, 
+                "bottomColor": { value: new THREE.Color(0xd6e6ff) }, 
+                "offset": { value: 33 }, 
+                "exponent": { value: 0.6 } 
+            }; 
+            const skyMat = new THREE.ShaderMaterial({ 
+                uniforms: uniforms, 
+                vertexShader: vs, 
+                fragmentShader: fs, 
+                side: THREE.BackSide 
+            }); 
+            skyMesh = new THREE.Mesh(skyGeo, skyMat); 
+            scene.add(skyMesh); 
+        }
+
+        // --- createInstancedGroundObjects ---
+        function createInstancedGroundObjects(maxTrees, maxBuildings) { 
+            const treeTopR = 1.5, treeTopH = 5, treeTrunkR = 0.4, treeTrunkH = 3; 
+            const treeTopGeo = new THREE.ConeGeometry(treeTopR, treeTopH, 6); 
+            const treeTrunkGeo = new THREE.CylinderGeometry(treeTrunkR, treeTrunkR, treeTrunkH, 5); 
+            const treeTopMat = new THREE.MeshStandardMaterial({ color: 0x228B22, roughness: 0.8 }); 
+            const treeTrunkMat = new THREE.MeshStandardMaterial({ color: 0x8B4513, roughness: 0.9 }); 
+            const buildingGeo = new THREE.BoxGeometry(1,1,1); 
+            const buildingMat = new THREE.MeshStandardMaterial({ color: 0xaaaaaa, roughness: 0.8 }); 
+            const buildingMatDarker = new THREE.MeshStandardMaterial({ color: 0x888888, roughness: 0.75 }); 
+            instancedTreeTrunks = new THREE.InstancedMesh(treeTrunkGeo, treeTrunkMat, maxTrees); 
+            instancedTreeTops = new THREE.InstancedMesh(treeTopGeo, treeTopMat, maxTrees); 
+            instancedBuildings = new THREE.InstancedMesh(buildingGeo, buildingMat, maxBuildings); 
+            instancedBuildingsDark = new THREE.InstancedMesh(buildingGeo, buildingMatDarker, maxBuildings); 
+            instancedTreeTrunks.castShadow = true; 
+            instancedTreeTrunks.receiveShadow = true; 
+            instancedTreeTops.castShadow = true; 
+            instancedTreeTops.receiveShadow = true; 
+            instancedBuildings.castShadow = true; 
+            instancedBuildings.receiveShadow = true; 
+            instancedBuildingsDark.castShadow = true; 
+            instancedBuildingsDark.receiveShadow = true; 
+            const dummy = new THREE.Object3D(); 
+            const trunkMatrix = new THREE.Matrix4(); 
+            const topMatrix = new THREE.Matrix4(); 
+            let treeCount = 0; 
+            let buildingCount = 0; 
+            let darkBuildingCount = 0; 
+            const objectPlacementRadius = 1.0; 
+            const isTooCloseToRiver = (px, pz) => { 
+                for (const path of allRiverPaths) { 
+                    for (let i = 0; i < path.length - 1; i++) { 
+                        const distSq = pointToLineSegmentDistanceSq(px, pz, path[i].x, path[i].y, path[i+1].x, path[i+1].y); 
+                        if (distSq < (riverCollisionPadding + objectPlacementRadius)**2) return true; 
+                    } 
+                } 
+                return false; 
+            }; 
+            for (let i = 0; i < maxTrees * 5 && treeCount < maxTrees; i++) { 
+                const posX = (Math.random() - 0.5) * worldRadius * 1.9; 
+                const posZ = (Math.random() - 0.5) * worldRadius * 1.9; 
+                const inCity = isPointInPolygon(posX, posZ, cityPolygon); 
+                if (isTooCloseToRiver(posX, posZ)) continue; 
+                if (inCity && Math.random() > 0.05) continue; 
+                if (!inCity && Math.random() > 0.5) continue; 
+                dummy.position.set(posX, groundLevel, posZ); 
+                dummy.rotation.y = Math.random() * Math.PI * 2; 
+                dummy.scale.setScalar(0.8 + Math.random() * 0.4); 
+                dummy.updateMatrix(); 
+                trunkMatrix.makeTranslation(0, treeTrunkH / 2, 0); 
+                trunkMatrix.premultiply(dummy.matrix); 
+                instancedTreeTrunks.setMatrixAt(treeCount, trunkMatrix); 
+                topMatrix.makeTranslation(0, treeTrunkH + treeTopH / 2, 0); 
+                topMatrix.premultiply(dummy.matrix); 
+                instancedTreeTops.setMatrixAt(treeCount, topMatrix); 
+                treeCount++; 
+            } 
+            instancedTreeTrunks.count = treeCount; 
+            instancedTreeTops.count = treeCount; 
+            instancedTreeTrunks.instanceMatrix.needsUpdate = true; 
+            instancedTreeTops.instanceMatrix.needsUpdate = true; 
+            for (let i = 0; i < maxBuildings * 5 && (buildingCount + darkBuildingCount < maxBuildings); i++) { 
+                const posX = (Math.random() - 0.5) * worldRadius * 1.9; 
+                const posZ = (Math.random() - 0.5) * worldRadius * 1.9; 
+                const inCity = isPointInPolygon(posX, posZ, cityPolygon); 
+                if (isTooCloseToRiver(posX, posZ)) continue; 
+                if (!inCity && Math.random() > 0.15) continue; 
+                const scaleX = Math.random() * 6 + 4; 
+                const scaleY = inCity ? Math.random() * 15 + 8 : Math.random() * 7 + 5; 
+                const scaleZ = Math.random() * 6 + 4; 
+                dummy.position.set(posX, groundLevel + scaleY / 2, posZ); 
+                dummy.rotation.y = Math.random() > 0.8 ? (Math.PI/4 * (Math.random() > 0.5 ? 1 : -1)) : (Math.random() > 0.6 ? Math.PI/2 : 0); 
+                dummy.scale.set(scaleX, scaleY, scaleZ); 
+                dummy.updateMatrix(); 
+                if (Math.random() > 0.3 && buildingCount < maxBuildings) { 
+                    instancedBuildings.setMatrixAt(buildingCount++, dummy.matrix); 
+                } else if (darkBuildingCount < maxBuildings) { 
+                    instancedBuildingsDark.setMatrixAt(darkBuildingCount++, dummy.matrix); 
+                } 
+            } 
+            instancedBuildings.count = buildingCount; 
+            instancedBuildingsDark.count = darkBuildingCount; 
+            instancedBuildings.instanceMatrix.needsUpdate = true; 
+            instancedBuildingsDark.instanceMatrix.needsUpdate = true; 
+            scene.add(instancedTreeTrunks); 
+            scene.add(instancedTreeTops); 
+            scene.add(instancedBuildings); 
+            scene.add(instancedBuildingsDark); 
+            console.log(`Created ${treeCount} instanced trees and ${buildingCount + darkBuildingCount} instanced buildings.`); 
+        }
+
+        // --- createRivers, createLandmarks, createBridges ---
+        function createRivers() { 
+            const riverMaterial = new THREE.MeshStandardMaterial({ color: 0x335599, roughness: 0.6, metalness: 0.1, side: THREE.DoubleSide }); 
+            const canalMaterial = new THREE.MeshStandardMaterial({ color: 0x4060A0, roughness: 0.5, metalness: 0.1, side: THREE.DoubleSide }); 
+            const riverYOffset = groundLevel + 0.1; 
+            function createRiverSegment(points, width, material) { 
+                const shape = new THREE.Shape(); 
+                if (points.length < 2) return; 
+                const tangents = []; 
+                for(let i = 0; i < points.length; i++) { 
+                    const prev = points[Math.max(0, i - 1)]; 
+                    const next = points[Math.min(points.length - 1, i + 1)]; 
+                    tangents.push(new THREE.Vector2().subVectors(next, prev).normalize()); 
+                } 
+                shape.moveTo(points[0].x + tangents[0].y * width/2, points[0].y - tangents[0].x * width/2); 
+                for (let i = 1; i < points.length; i++) { 
+                    shape.lineTo(points[i].x + tangents[i].y * width/2, points[i].y - tangents[i].x * width/2); 
+                } 
+                for (let i = points.length - 1; i >= 0; i--) { 
+                    shape.lineTo(points[i].x - tangents[i].y * width/2, points[i].y + tangents[i].x * width/2); 
+                } 
+                shape.closePath(); 
+                const geometry = new THREE.ShapeGeometry(shape); 
+                const mesh = new THREE.Mesh(geometry, material); 
+                mesh.rotation.x = -Math.PI / 2; 
+                mesh.position.y = riverYOffset; 
+                mesh.receiveShadow = true; 
+                cityFeatures.add(mesh); 
+            } 
+            createRiverSegment(leiePoints, riverWidth, riverMaterial); 
+            createRiverSegment(scheldtPoints, riverWidth, riverMaterial); 
+            createRiverSegment(canalPoints, canalWidth, canalMaterial); 
+            console.log("Created rivers."); 
+        }
+        
+        function createLandmarks() { 
+            const landmarkYOffset = groundLevel + 0.1; 
+            const towerMat = new THREE.MeshStandardMaterial({ color: 0xb0a89f, roughness: 0.7 }); 
+            const churchMat = new THREE.MeshStandardMaterial({ color: 0xc0b8af, roughness: 0.7 }); 
+            const belfryMat = new THREE.MeshStandardMaterial({ color: 0xd0c8bf, roughness: 0.6 }); 
+            const castleMat = new THREE.MeshStandardMaterial({ color: 0x888890, roughness: 0.8 }); 
+            const spireMat = new THREE.MeshStandardMaterial({ color: 0x707070, roughness: 0.5 }); 
+            const belfryPos = { x: 5, z: 15 }; 
+            const stBavosPos = { x: 45, z: 25 }; 
+            const stNicholasPos = { x: -25, z: 0 }; 
+            const gravensteenPos = { x: -70, z: 60 }; 
+            const bavos = new THREE.Group(); 
+            const bavosMain = new THREE.Mesh(new THREE.BoxGeometry(20, 35, 45), churchMat); 
+            bavos.add(bavosMain); 
+            const bavosTowerBase = new THREE.Mesh(new THREE.BoxGeometry(12, 70, 12), churchMat); 
+            bavosTowerBase.position.set(0, 17.5, -10); 
+            bavos.add(bavosTowerBase); 
+            const bavosSpire = new THREE.Mesh(new THREE.ConeGeometry(6, 30, 8), spireMat); 
+            bavosSpire.position.set(0, 70+15-17.5, -10); 
+            bavos.add(bavosSpire); 
+            bavos.position.set(stBavosPos.x, landmarkYOffset, stBavosPos.z); 
+            bavos.traverse(child => { if (child.isMesh) child.castShadow = true; }); 
+            cityFeatures.add(bavos); 
+            const belfry = new THREE.Group(); 
+            const belfryBase = new THREE.Mesh(new THREE.BoxGeometry(12, 75, 12), belfryMat); 
+            belfry.add(belfryBase); 
+            const belfrySpireBase = new THREE.Mesh(new THREE.ConeGeometry(7, 20, 4), spireMat); 
+            belfrySpireBase.position.y = 37.5 + 10; 
+            belfrySpireBase.rotation.y = Math.PI / 4; 
+            belfry.add(belfrySpireBase); 
+            const belfrySpireTop = new THREE.Mesh(new THREE.ConeGeometry(3, 15, 4), spireMat); 
+            belfrySpireTop.position.y = belfrySpireBase.position.y + 10 + 7.5; 
+            belfrySpireTop.rotation.y = Math.PI / 4; 
+            belfry.add(belfrySpireTop); 
+            belfry.position.set(belfryPos.x, 75 / 2 + landmarkYOffset, belfryPos.z); 
+            belfry.traverse(child => { if (child.isMesh) child.castShadow = true; }); 
+            cityFeatures.add(belfry); 
+            const nicholas = new THREE.Group(); 
+            const nicholasMain = new THREE.Mesh(new THREE.BoxGeometry(18, 30, 40), towerMat); 
+            nicholas.add(nicholasMain); 
+            const nicholasCrossTower = new THREE.Mesh(new THREE.CylinderGeometry(6, 7, 55, 8), towerMat); 
+            nicholasCrossTower.position.set(0, 27.5, 0); 
+            nicholas.add(nicholasCrossTower); 
+            const nicholasRoof = new THREE.Mesh(new THREE.ConeGeometry(8, 15, 8), spireMat); 
+            nicholasRoof.position.set(0, 55+7.5 - 27.5, 0); 
+            nicholas.add(nicholasRoof); 
+            nicholas.position.set(stNicholasPos.x, landmarkYOffset, stNicholasPos.z); 
+            nicholas.traverse(child => { if (child.isMesh) child.castShadow = true; }); 
+            cityFeatures.add(nicholas); 
+            const castle = new THREE.Group(); 
+            const wallHeight = 18; 
+            const wall1 = new THREE.Mesh(new THREE.BoxGeometry(40, wallHeight, 8), castleMat); 
+            wall1.position.set(0, 0, -15); 
+            castle.add(wall1); 
+            const wall2 = new THREE.Mesh(new THREE.BoxGeometry(8, wallHeight, 30), castleMat); 
+            wall2.position.set(-16, 0, 0); 
+            castle.add(wall2); 
+            const wall3 = new THREE.Mesh(new THREE.BoxGeometry(8, wallHeight, 30), castleMat); 
+            wall3.position.set(16, 0, 0); 
+            castle.add(wall3); 
+            const wall4 = new THREE.Mesh(new THREE.BoxGeometry(25, wallHeight, 8), castleMat); 
+            wall4.position.set(-2.5, 0, 11); 
+            castle.add(wall4); 
+            const keep = new THREE.Mesh(new THREE.BoxGeometry(15, wallHeight + 12, 18), castleMat); 
+            keep.position.y = 6; 
+            castle.add(keep); 
+            const towerGeo = new THREE.CylinderGeometry(4, 4, wallHeight + 5, 10); 
+            const tower1 = new THREE.Mesh(towerGeo, castleMat); 
+            tower1.position.set(-16, (wallHeight+5)/2 - wallHeight/2, -15); 
+            castle.add(tower1); 
+            const tower2 = new THREE.Mesh(towerGeo, castleMat); 
+            tower2.position.set(16, (wallHeight+5)/2 - wallHeight/2, -15); 
+            castle.add(tower2); 
+            const tower3 = new THREE.Mesh(towerGeo, castleMat); 
+            tower3.position.set(-16, (wallHeight+5)/2 - wallHeight/2, 11); 
+            castle.add(tower3); 
+            const tower4 = new THREE.Mesh(towerGeo, castleMat); 
+            tower4.position.set(10, (wallHeight+5)/2 - wallHeight/2, 11); 
+            castle.add(tower4); 
+            castle.position.set(gravensteenPos.x, wallHeight / 2 + landmarkYOffset, gravensteenPos.z); 
+            castle.rotation.y = Math.PI / 7; 
+            castle.traverse(child => { if (child.isMesh) child.castShadow = true; }); 
+            cityFeatures.add(castle); 
+            console.log("Created detailed landmarks."); 
+        }
+        
+        function createBridges() { 
+            const bridgeMaterial = new THREE.MeshStandardMaterial({ color: 0x666666, roughness: 0.9 }); 
+            const bridgeHeight = 1.5; 
+            const bridgeThickness = 0.5; 
+            const bridgeYPos = groundLevel + bridgeHeight; 
+            const bridgeData = [ 
+                [-60, 0, 8, 30, 0], 
+                [20, -60, 8, 35, Math.PI/4], 
+                [80, -120, 8, 30, Math.PI/4], 
+                [400, -10, 10, 50, 0], 
+                [300, 500, 10, 50, 0], 
+                [-300, 100, 8, 25, -Math.PI/6], 
+                [400, 200, 10, 50, 0], 
+                [400, -250, 10, 50, 0], 
+                [-400, -200, 8, 30, Math.PI/3], 
+            ]; 
+            bridgeData.forEach(data => { 
+                const [x, z, w, l, rot] = data; 
+                const bridgeGeo = new THREE.BoxGeometry(w, bridgeThickness, l); 
+                const bridge = new THREE.Mesh(bridgeGeo, bridgeMaterial); 
+                bridge.position.set(x, bridgeYPos, z); 
+                bridge.rotation.y = rot; 
+                bridge.castShadow = true; 
+                cityFeatures.add(bridge); 
+            }); 
+            console.log("Created bridges."); 
+        }
+
+        // --- createAirplaneWW2_V2 (Spitfire Model) ---
+        function createAirplaneWW2_V2() {
+            airplane = new THREE.Group();
+
+            // Spitfire Colors (Approximate)
+            const colorUpperGreen = 0x4B533E; // Dark Green
+            const colorUpperGrey = 0x7B8489; // Ocean Grey
+            const colorLowerGrey = 0xA8B4B8; // Medium Sea Grey
+            const colorSpinner = 0x303030; // Dark grey/black
+            const colorPropeller = 0x202020;
+            const colorExhaust = 0x5A4F4A;
+            const colorCockpitFrame = 0x606060;
+            const colorGlass = 0xADD8E6; // Light blue for glass
+
+            // Markings Colors
+            const colorRoundelBlue = 0x00247D; // RAF Blue
+            const colorRoundelWhite = 0xFFFFFF;
+            const colorRoundelRed = 0xCE1126; // RAF Red
+            const colorTailRed = 0xCE1126;
+            const colorTailWhite = 0xFFFFFF;
+            const colorTailBlue = 0x00247D;
+            const colorYellowLeading = 0xFFD700; // Gold/Yellow
+
+
+            // --- Materials ---
+            const fuselageMatUpper = new THREE.MeshStandardMaterial({ color: colorUpperGrey, roughness: 0.6, metalness: 0.2 });
+            const fuselageMatLower = new THREE.MeshStandardMaterial({ color: colorLowerGrey, roughness: 0.7, metalness: 0.1 });
+            // Wings might need separate top/bottom materials if we want camo split
+            const wingMatUpper = new THREE.MeshStandardMaterial({ color: colorUpperGrey, roughness: 0.6, metalness: 0.2 }); // Use grey for now, camo is complex
+            const wingMatLower = new THREE.MeshStandardMaterial({ color: colorLowerGrey, roughness: 0.7, metalness: 0.1 });
+            const cockpitFrameMat = new THREE.MeshStandardMaterial({ color: colorCockpitFrame, roughness: 0.5, metalness: 0.3 });
+            const glassMat = new THREE.MeshStandardMaterial({ color: colorGlass, roughness: 0.1, metalness: 0.1, transparent: true, opacity: 0.3 });
+            const propellerMat = new THREE.MeshStandardMaterial({ color: colorPropeller, roughness: 0.4, metalness: 0.5 });
+            const spinnerMat = new THREE.MeshStandardMaterial({ color: colorSpinner, roughness: 0.5, metalness: 0.4 });
+            const exhaustMat = new THREE.MeshStandardMaterial({ color: colorExhaust, roughness: 0.6, metalness: 0.4 });
+            const markingMat = new THREE.MeshBasicMaterial({ side: THREE.DoubleSide, depthWrite: false }); // Basic material for markings
+
+            // --- Fuselage (Multiple Cylinders Tapered) ---
+            const fuselageSegments = 20;
+            const fuselageLength = 7.0;
+             // Define radii at different points along length (z-axis, front is negative)
+             const radii = [
+                 { z: -3.5, r: 0.1 }, // Nose tip
+                 { z: -3.0, r: 0.4 }, // Start of main body
+                 { z: -1.0, r: 0.65}, // Widest point near cockpit/wing root
+                 { z: 1.5,  r: 0.5 }, // Tapering rear
+                 { z: 3.0,  r: 0.25}, // Tail base
+                 { z: 3.5,  r: 0.15}  // Very end
+             ];
+
+             for(let i = 0; i < radii.length - 1; i++) {
+                 const r1 = radii[i];
+                 const r2 = radii[i+1];
+                 const segmentLength = r2.z - r1.z;
+                 const avgRadius = (r1.r + r2.r) / 2;
+                 // Choose upper or lower material based on average height (simple split)
+                 const mat = avgRadius > 0.3 ? fuselageMatUpper : fuselageMatLower; // Simple split based on radius
+                 const segmentGeo = new THREE.CylinderGeometry(r1.r, r2.r, segmentLength, fuselageSegments);
+                 const segment = new THREE.Mesh(segmentGeo, fuselageMatUpper); // Use upper for now
+                 segment.rotation.x = Math.PI / 2;
+                 segment.position.z = r1.z + segmentLength / 2;
+                 segment.castShadow = true;
+                 airplane.add(segment);
+             }
+
+
+            // --- Wings (Elliptical Shape with ExtrudeGeometry) ---
+             const wingSpan = 9.5;
+             const wingRootChord = 2.0;
+             const wingTipChord = 0.8;
+             const wingThickness = 0.2;
+             const wingDihedralAngle = Math.PI * 0.05; // Spitfire had noticeable dihedral
+
+             const wingShape = new THREE.Shape();
+             const halfSpan = wingSpan / 2;
+             // Start at root trailing edge
+             wingShape.moveTo(0, -wingRootChord / 2);
+             // Curve to tip trailing edge
+             wingShape.quadraticCurveTo(halfSpan * 0.6, -wingRootChord * 0.4, halfSpan, -wingTipChord / 2);
+             // Straight tip edge (approx)
+             wingShape.lineTo(halfSpan, wingTipChord / 2);
+             // Curve to root leading edge
+             wingShape.quadraticCurveTo(halfSpan * 0.5, wingRootChord * 0.35, 0, wingRootChord / 2);
+             // Close shape
+             wingShape.lineTo(0, -wingRootChord / 2);
+
+             const wingExtrudeSettings = { depth: wingThickness, bevelEnabled: false };
+             const wingGeometry = new THREE.ExtrudeGeometry(wingShape, wingExtrudeSettings);
+             wingGeometry.computeVertexNormals(); // Important for lighting
+
+             // Need to apply materials per face for top/bottom/sides - complex.
+             // Simplified: Use one material for now, apply decals later.
+             const rightWing = new THREE.Mesh(wingGeometry, wingMatUpper); // Use upper material
+             rightWing.rotateX(-Math.PI / 2); // Lay flat Z-up
+             rightWing.rotateY(-wingDihedralAngle); // Apply dihedral (roll up)
+             rightWing.position.y = -0.2; // Lower wing root slightly
+             rightWing.position.z = -1.0; // Position along fuselage
+             rightWing.castShadow = true;
+             airplane.add(rightWing);
+
+             // Clone and flip for left wing
+             const leftWing = rightWing.clone();
+             leftWing.rotation.y *= -1; // Flip dihedral
+             leftWing.scale.x = -1; // Flip geometry
+             airplane.add(leftWing);
+
+             // Yellow leading edge (thin box)
+             const leadingEdgeGeo = new THREE.BoxGeometry(wingSpan * 0.95, wingThickness * 1.1, 0.05); // Thin box
+             const leadingEdgeMat = new THREE.MeshBasicMaterial({color: colorYellowLeading});
+             const leadingEdge = new THREE.Mesh(leadingEdgeGeo, leadingEdgeMat);
+             leadingEdge.position.set(0, rightWing.position.y, rightWing.position.z + wingRootChord * 0.45); // Position slightly fwd
+             // Apply average dihedral? Or parent to wings? Simpler to just position for now
+             leadingEdge.rotation.y = wingDihedralAngle * 0.5; // Average dihedral approximation
+             //airplane.add(leadingEdge); // Add if desired
+
+
+            // --- Tail Stabilizers (Elliptical-like) ---
+             const tailPlaneSpan = 3.5;
+             const tailPlaneRootChord = 1.0;
+             const tailPlaneTipChord = 0.6;
+             const tailPlaneThickness = 0.1;
+
+             const tailShape = new THREE.Shape();
+             const tailHalfSpan = tailPlaneSpan / 2;
+             tailShape.moveTo(0, -tailPlaneRootChord / 2);
+             tailShape.quadraticCurveTo(tailHalfSpan * 0.7, -tailPlaneRootChord * 0.4, tailHalfSpan, -tailPlaneTipChord / 2);
+             tailShape.lineTo(tailHalfSpan, tailPlaneTipChord / 2);
+             tailShape.quadraticCurveTo(tailHalfSpan * 0.6, tailPlaneRootChord * 0.3, 0, tailPlaneRootChord / 2);
+             tailShape.lineTo(0, -tailPlaneRootChord / 2);
+
+             const tailExtrudeSettings = { depth: tailPlaneThickness, bevelEnabled: false };
+             const tailPlaneGeometry = new THREE.ExtrudeGeometry(tailShape, tailExtrudeSettings);
+             tailPlaneGeometry.computeVertexNormals();
+
+             const tailPlaneRight = new THREE.Mesh(tailPlaneGeometry, fuselageMatUpper); // Use fuselage color
+             tailPlaneRight.rotateX(-Math.PI/2);
+             tailPlaneRight.position.set(0, 0.1, fuselageLength * 0.4); // Position at rear top
+             tailPlaneRight.castShadow = true;
+             airplane.add(tailPlaneRight);
+
+             const tailPlaneLeft = tailPlaneRight.clone();
+             tailPlaneLeft.scale.x = -1;
+             airplane.add(tailPlaneLeft);
+
+            // --- Vertical Stabilizer (Curved) ---
+             const finHeight = 1.8;
+             const finBaseChord = 1.5;
+             const finTipChord = 0.4;
+             const finThickness = 0.1;
+
+             const finShape = new THREE.Shape();
+             finShape.moveTo(0, 0); // Bottom rear corner
+             finShape.lineTo(-finBaseChord, 0); // Bottom front corner
+             finShape.quadraticCurveTo(-finBaseChord * 0.8, finHeight * 0.8, -finTipChord, finHeight); // Curved leading edge to top front
+             finShape.lineTo(0, finHeight); // Top rear corner
+             finShape.lineTo(0, 0); // Close
+
+             const finExtrudeSettings = { depth: finThickness, bevelEnabled: false };
+             const finGeometry = new THREE.ExtrudeGeometry(finShape, finExtrudeSettings);
+             finGeometry.computeVertexNormals();
+             const tailFin = new THREE.Mesh(finGeometry, fuselageMatUpper); // Fuselage color
+             tailFin.rotateY(-Math.PI / 2); // Stand up
+             tailFin.position.set(finThickness/2 + 0.02, 0.1, fuselageLength * 0.4 - finBaseChord ); // Position on top rear fuselage
+             tailFin.castShadow = true;
+             airplane.add(tailFin);
+
+            // --- Cockpit Canopy (Bubble style) ---
+             const canopyLength = 1.2;
+             const canopyWidth = 0.7;
+             const canopyHeight = 0.4;
+             // Base frame (thin box)
+             const canopyFrameGeo = new THREE.BoxGeometry(canopyWidth, 0.1, canopyLength);
+             const canopyFrame = new THREE.Mesh(canopyFrameGeo, colorCockpitFrame);
+             canopyFrame.position.set(0, 0.6, -1.0); // Position on top
+             airplane.add(canopyFrame);
+             // Bubble (Sphere segment)
+             const canopyGlassGeo = new THREE.SphereGeometry(canopyWidth * 0.7, 20, 10, 0, Math.PI * 2, 0, Math.PI / 2);
+             const canopyGlass = new THREE.Mesh(canopyGlassGeo, glassMat);
+             canopyGlass.scale.z = canopyLength / (canopyWidth * 0.7 * 2); // Stretch sphere into oval
+             canopyGlass.rotation.x = -Math.PI / 2; // Orient top up
+             canopyGlass.position.set(0, 0.6 + 0.05, -1.0); // Place on frame
+             airplane.add(canopyGlass);
+
+
+            // --- Propeller (4 blades) ---
+             propeller = new THREE.Group();
+             const spinnerRadius = 0.3; const spinnerLength = 0.7;
+             const spinnerGeometry = new THREE.ConeGeometry(spinnerRadius, spinnerLength, 16);
+             const spinner = new THREE.Mesh(spinnerGeometry, spinnerMat); spinner.rotation.x = Math.PI / 2; propeller.add(spinner);
+             const bladeLength = 1.8; const bladeWidth = 0.3; const bladeThickness = 0.04;
+             const bladeGeometry = new THREE.BoxGeometry(bladeWidth, bladeLength, bladeThickness);
+             const numBlades = 4; // **** CHANGED TO 4 ****
+             for (let i = 0; i < numBlades; i++) {
+                 const blade = new THREE.Mesh(bladeGeometry, propellerMat); blade.position.y = bladeLength * 0.4; // Offset base near center
+                 blade.castShadow = true; blade.rotation.z = Math.PI * 0.1; // Blade pitch
+                 const bladeGroup = new THREE.Group(); bladeGroup.rotation.z = (i / numBlades) * Math.PI * 2; bladeGroup.add(blade); propeller.add(bladeGroup);
+             }
+             propeller.position.z = -fuselageLength / 2 - spinnerLength * 0.4;
+             airplane.add(propeller);
+
+
+            // --- Details: Exhausts ---
+             const exhaustGeo = new THREE.CylinderGeometry(0.08, 0.06, 0.5, 6);
+             for (let i = 0; i < 6; i++) { // 6 per side for Spitfire
+                 const exhaustL = new THREE.Mesh(exhaustGeo, exhaustMat); exhaustL.rotation.z = -Math.PI * 0.6; exhaustL.position.set(-0.55, 0.3, -2.5 + i * 0.25); airplane.add(exhaustL);
+                 const exhaustR = exhaustL.clone(); exhaustR.position.x *= -1; exhaustR.rotation.z *= -1; airplane.add(exhaustR);
+             }
+
+             // --- Gun Flash Placeholder ---
+             const flashGeometry = new THREE.PlaneGeometry(0.6, 0.6); const flashMaterial = new THREE.MeshBasicMaterial({ color: 0xffff44, side: THREE.DoubleSide, transparent: true, opacity: 0, depthWrite: false, blending: THREE.AdditiveBlending }); gunFlash = new THREE.Mesh(flashGeometry, flashMaterial); gunFlash.position.z = -fuselageLength/2 - 0.5; gunFlash.rotation.x = Math.PI / 2; airplane.add(gunFlash);
+
+             // --- Markings ---
+             const roundelOffset = 0.02; // Slight offset from surface
+             const roundelRadiusOuter = 0.7;
+             const roundelRadiusMid = 0.4;
+             const roundelRadiusInner = 0.2;
+
+             const roundelBlueMat = markingMat.clone(); roundelBlueMat.color.setHex(colorRoundelBlue);
+             const roundelWhiteMat = markingMat.clone(); roundelWhiteMat.color.setHex(colorRoundelWhite);
+             const roundelRedMat = markingMat.clone(); roundelRedMat.color.setHex(colorRoundelRed);
+
+             // Wing Roundels (Top)
+             const wingRoundelPos = wingSpan * 0.25;
+             const wingRoundelBlueTop = new THREE.Mesh(new THREE.CircleGeometry(roundelRadiusOuter, 32), roundelBlueMat);
+             const wingRoundelWhiteTop = new THREE.Mesh(new THREE.CircleGeometry(roundelRadiusMid, 32), roundelWhiteMat);
+             const wingRoundelRedTop = new THREE.Mesh(new THREE.CircleGeometry(roundelRadiusInner, 32), roundelRedMat);
+             wingRoundelBlueTop.position.set(wingRoundelPos, wingThickness/2 + roundelOffset, 0); wingRoundelBlueTop.rotation.x = -Math.PI / 2;
+             wingRoundelWhiteTop.position.set(wingRoundelPos, wingThickness/2 + roundelOffset*2, 0); wingRoundelWhiteTop.rotation.x = -Math.PI / 2;
+             wingRoundelRedTop.position.set(wingRoundelPos, wingThickness/2 + roundelOffset*3, 0); wingRoundelRedTop.rotation.x = -Math.PI / 2;
+             rightWing.add(wingRoundelBlueTop); rightWing.add(wingRoundelWhiteTop); rightWing.add(wingRoundelRedTop);
+             // Clone for left wing (mirrored)
+             const wingRoundelBlueTopL = wingRoundelBlueTop.clone(); wingRoundelBlueTopL.position.x *= -1; leftWing.add(wingRoundelBlueTopL);
+             const wingRoundelWhiteTopL = wingRoundelWhiteTop.clone(); wingRoundelWhiteTopL.position.x *= -1; leftWing.add(wingRoundelWhiteTopL);
+             const wingRoundelRedTopL = wingRoundelRedTop.clone(); wingRoundelRedTopL.position.x *= -1; leftWing.add(wingRoundelRedTopL);
+
+              // Wing Roundels (Bottom - smaller white/red usually)
+              // ... similar process, adjust radii and position Y negative ...
+
+             // Fuselage Roundels
+             const fuseRoundelPosY = 0;
+             const fuseRoundelPosZ = 0.5;
+             const fuseRoundelBlueSide = new THREE.Mesh(new THREE.CircleGeometry(roundelRadiusOuter*0.8, 32), roundelBlueMat);
+             const fuseRoundelWhiteSide = new THREE.Mesh(new THREE.CircleGeometry(roundelRadiusMid*0.8, 32), roundelWhiteMat);
+             const fuseRoundelRedSide = new THREE.Mesh(new THREE.CircleGeometry(roundelRadiusInner*0.8, 32), roundelRedMat);
+             fuseRoundelBlueSide.position.set(radii[2].r + roundelOffset, fuseRoundelPosY, fuseRoundelPosZ); fuseRoundelBlueSide.rotation.y = Math.PI / 2;
+             fuseRoundelWhiteSide.position.set(radii[2].r + roundelOffset*2, fuseRoundelPosY, fuseRoundelPosZ); fuseRoundelWhiteSide.rotation.y = Math.PI / 2;
+             fuseRoundelRedSide.position.set(radii[2].r + roundelOffset*3, fuseRoundelPosY, fuseRoundelPosZ); fuseRoundelRedSide.rotation.y = Math.PI / 2;
+             airplane.add(fuseRoundelBlueSide); airplane.add(fuseRoundelWhiteSide); airplane.add(fuseRoundelRedSide);
+             // Clone for other side
+             const fuseRoundelBlueSideL = fuseRoundelBlueSide.clone(); fuseRoundelBlueSideL.position.x *= -1; fuseRoundelBlueSideL.rotation.y *= -1; airplane.add(fuseRoundelBlueSideL);
+             const fuseRoundelWhiteSideL = fuseRoundelWhiteSide.clone(); fuseRoundelWhiteSideL.position.x *= -1; fuseRoundelWhiteSideL.rotation.y *= -1; airplane.add(fuseRoundelWhiteSideL);
+             const fuseRoundelRedSideL = fuseRoundelRedSide.clone(); fuseRoundelRedSideL.position.x *= -1; fuseRoundelRedSideL.rotation.y *= -1; airplane.add(fuseRoundelRedSideL);
+
+
+             // Tail Flash
+             const tailFlashWidth = 0.3;
+             const tailFlashHeight = finHeight * 0.8;
+             const tailFlashPosZ = fuselageLength * 0.4 - finBaseChord * 0.8; // Position near front of fin base
+
+             const tailRedMat = markingMat.clone(); tailRedMat.color.setHex(colorTailRed);
+             const tailWhiteMat = markingMat.clone(); tailWhiteMat.color.setHex(colorTailWhite);
+             const tailBlueMat = markingMat.clone(); tailBlueMat.color.setHex(colorTailBlue);
+
+             const tailRed = new THREE.Mesh(new THREE.PlaneGeometry(tailFlashWidth, tailFlashHeight), tailRedMat);
+             const tailWhite = new THREE.Mesh(new THREE.PlaneGeometry(tailFlashWidth, tailFlashHeight), tailWhiteMat);
+             const tailBlue = new THREE.Mesh(new THREE.PlaneGeometry(tailFlashWidth, tailFlashHeight), tailBlueMat);
+
+             // Position stripes side-by-side on the fin
+             tailRed.position.set(finThickness/2 + roundelOffset, finHeight * 0.4, tailFlashPosZ); tailRed.rotation.y = -Math.PI / 2;
+             tailWhite.position.set(finThickness/2 + roundelOffset*2, finHeight * 0.4, tailFlashPosZ - tailFlashWidth); tailWhite.rotation.y = -Math.PI / 2;
+             tailBlue.position.set(finThickness/2 + roundelOffset*3, finHeight * 0.4, tailFlashPosZ - tailFlashWidth * 2); tailBlue.rotation.y = -Math.PI / 2;
+
+             tailFin.add(tailRed); tailFin.add(tailWhite); tailFin.add(tailBlue);
+             // Clone for other side
+             const tailRedL = tailRed.clone(); tailRedL.position.x *= -1; tailRedL.rotation.y *= -1; tailFin.add(tailRedL);
+             const tailWhiteL = tailWhite.clone(); tailWhiteL.position.x *= -1; tailWhiteL.position.y = tailWhite.position.y; tailWhiteL.position.z = tailWhite.position.z; tailWhiteL.rotation.y *= -1; tailFin.add(tailWhiteL);
+             const tailBlueL = tailBlue.clone(); tailBlueL.position.x *= -1; tailBlueL.position.y = tailBlue.position.y; tailBlueL.position.z = tailBlue.position.z; tailBlueL.rotation.y *= -1; tailFin.add(tailBlueL);
+
+
+             // Final Airplane Settings (spawn set in init)
+             airplane.rotation.order = 'YXZ';
+        }
+
+        // --- createTargets, createEnemies, createEnemyFighter ---
+        function createTargets(count) { 
+            const geo = new THREE.TorusGeometry(targetRadius, 0.7, 10, 40); 
+            const mat = new THREE.MeshStandardMaterial({ color: 0xff8c00, roughness: 0.4, metalness: 0.2 }); 
+            for (let i = 0; i < count; i++) { 
+                const target = new THREE.Mesh(geo, mat); 
+                const h = 180; 
+                target.position.set( 
+                    (Math.random() - 0.5) * worldRadius * 1.8, 
+                    Math.random() * h + 20, 
+                    (Math.random() - 0.5) * worldRadius * 1.8 
+                ); 
+                target.rotation.set( 
+                    Math.random() * Math.PI, 
+                    Math.random() * Math.PI, 
+                    Math.random() * Math.PI 
+                ); 
+                target.castShadow = true; 
+                target.userData = { isTarget: true, hit: false, velocity: null }; 
+                if (Math.random() < 0.4) { 
+                    const speed = 0.18; 
+                    target.userData.velocity = new THREE.Vector3( 
+                        (Math.random() - 0.5) * speed, 
+                        0, 
+                        (Math.random() - 0.5) * speed 
+                    ); 
+                    const range = 70; 
+                    target.userData.moveBounds = { 
+                        minX: target.position.x - range, 
+                        maxX: target.position.x + range, 
+                        minZ: target.position.z - range, 
+                        maxZ: target.position.z + range 
+                    }; 
+                } 
+                scene.add(target); 
+                targets.push(target); 
+            } 
+        }
+        
+        function createEnemies(count) { 
+            for (let i = 0; i < count; i++) { 
+                const enemy = createEnemyFighter(); 
+                const spawnHeight = 280; 
+                enemy.position.set( 
+                    airplane.position.x + (Math.random() - 0.5) * worldRadius * 1.8, 
+                    Math.random() * spawnHeight + 40, 
+                    airplane.position.z + (Math.random() - 0.5) * worldRadius * 1.8 
+                ); 
+                const angle = Math.random() * Math.PI * 2; 
+                enemy.rotation.order = 'YXZ'; 
+                enemy.rotation.y = angle; 
+                enemy.castShadow = true; 
+                const enemySpeedMPS = cruiseSpeed * 0.8 / 3.6; 
+                enemy.userData = { 
+                    isEnemy: true, 
+                    hit: false, 
+                    state: 'PATROL', 
+                    velocity: new THREE.Vector3(Math.sin(angle), 0, Math.cos(angle)).multiplyScalar(enemySpeedMPS), 
+                    shootTimer: Math.random() * enemyShootCooldown + 0.5, 
+                    health: 40, 
+                    radarVisibleTimer: 0 
+                }; 
+                scene.add(enemy); 
+                enemies.push(enemy); 
+            } 
+        }
+        
+        function createEnemyFighter() { 
+            const enemyGroup = new THREE.Group(); 
+            const fuselageMat = new THREE.MeshStandardMaterial({ color: 0x555555, roughness: 0.5, metalness: 0.4 }); 
+            const wingMat = new THREE.MeshStandardMaterial({ color: 0x777777, roughness: 0.6, metalness: 0.3 }); 
+            const propMat = new THREE.MeshStandardMaterial({ color: 0x333333, roughness: 0.5, metalness: 0.5 }); 
+            const fuselageLength = 5.0; 
+            const fuselageRadius = 0.4; 
+            const fuselageGeo = new THREE.CylinderGeometry(fuselageRadius * 0.8, fuselageRadius, fuselageLength, 10); 
+            const fuselage = new THREE.Mesh(fuselageGeo, fuselageMat); 
+            fuselage.rotation.x = Math.PI / 2; 
+            fuselage.castShadow = true; 
+            enemyGroup.add(fuselage); 
+            const wingSpan = 6.0; 
+            const wingChord = 1.2; 
+            const wingThickness = 0.15; 
+            const wingGeo = new THREE.BoxGeometry(wingSpan, wingThickness, wingChord); 
+            const wing = new THREE.Mesh(wingGeo, wingMat); 
+            wing.position.y = -fuselageRadius * 0.3; 
+            wing.position.z = -0.4; 
+            wing.rotation.z = Math.PI * 0.04; 
+            wing.castShadow = true; 
+            enemyGroup.add(wing); 
+            const tailWingSpan = 2.5; 
+            const tailWingChord = 0.7; 
+            const tailWingGeo = new THREE.BoxGeometry(tailWingSpan, wingThickness * 0.8, tailWingChord); 
+            const tailWing = new THREE.Mesh(tailWingGeo, wingMat); 
+            tailWing.position.y = 0; 
+            tailWing.position.z = fuselageLength / 2 - tailWingChord * 0.6; 
+            tailWing.castShadow = true; 
+            enemyGroup.add(tailWing); 
+            const finHeight = 1.0; 
+            const finLength = 0.8; 
+            const tailFinGeo = new THREE.BoxGeometry(wingThickness*0.7, finHeight, finLength); 
+            const tailFin = new THREE.Mesh(tailFinGeo, fuselageMat); 
+            tailFin.position.set(0, fuselageRadius*0.8, fuselageLength/2 - finLength*0.5); 
+            tailFin.castShadow = true; 
+            enemyGroup.add(tailFin); 
+            const propGeo = new THREE.CylinderGeometry(fuselageRadius*1.2, fuselageRadius*1.2, 0.05, 8); 
+            const prop = new THREE.Mesh(propGeo, propMat); 
+            prop.rotation.x = Math.PI / 2; 
+            prop.position.z = -fuselageLength / 2 - 0.05; 
+            enemyGroup.add(prop); 
+            enemyGroup.userData.propeller = prop; 
+            return enemyGroup; 
+        }
+
+        // --- Create Bomber Aircraft ---
+        function createBomber() {
+            const bomberGroup = new THREE.Group();
+            
+            // Bomber is larger than fighter
+            const fuselageLength = 12.0;  // Increased from 8.0
+            const fuselageRadius = 1.2;  
+            
+            // Materials
+            const fuselageMat = new THREE.MeshStandardMaterial({ color: 0x666666, roughness: 0.6, metalness: 0.3 });
+            const wingMat = new THREE.MeshStandardMaterial({ color: 0x777777, roughness: 0.7, metalness: 0.2 });
+            const glassMat = new THREE.MeshStandardMaterial({ color: 0xADD8E6, transparent: true, opacity: 0.3 });
+            
+            // Fuselage (long cylinder)
+            const fuselageGeo = new THREE.CylinderGeometry(fuselageRadius * 0.7, fuselageRadius, fuselageLength, 12);
+            const fuselage = new THREE.Mesh(fuselageGeo, fuselageMat);
+            fuselage.rotation.x = Math.PI / 2;
+            bomberGroup.add(fuselage);
+            
+            // Wings (larger than fighters)
+            const wingSpan = 15.0;        // Increased from 10.0
+            const wingChord = 2.5; 
+            const wingThickness = 0.2;
+            const wingGeo = new THREE.BoxGeometry(wingSpan, wingThickness, wingChord);
+            const wing = new THREE.Mesh(wingGeo, wingMat);
+            wing.position.y = -fuselageRadius * 0.4;
+            wing.position.z = -1.0;
+            bomberGroup.add(wing);
+            
+            // Tail section
+            const tailWingSpan = 3.5;
+            const tailWingChord = 0.9;
+            const tailWingGeo = new THREE.BoxGeometry(tailWingSpan, wingThickness * 0.8, tailWingChord);
+            const tailWing = new THREE.Mesh(tailWingGeo, wingMat);
+            tailWing.position.y = 0;
+            tailWing.position.z = fuselageLength / 2 - tailWingChord * 0.6;
+            bomberGroup.add(tailWing);
+            
+            // Vertical stabilizer
+            const finHeight = 1.5;
+            const finLength = 1.0;
+            const tailFinGeo = new THREE.BoxGeometry(wingThickness*0.7, finHeight, finLength);
+            const tailFin = new THREE.Mesh(tailFinGeo, fuselageMat);
+            tailFin.position.set(0, fuselageRadius*0.8, fuselageLength/2 - finLength*0.5);
+            bomberGroup.add(tailFin);
+            
+            // Cockpit glass
+            const cockpitGeo = new THREE.SphereGeometry(fuselageRadius * 0.6, 12, 8, 0, Math.PI * 2, 0, Math.PI/2);
+            const cockpit = new THREE.Mesh(cockpitGeo, glassMat);
+            cockpit.position.set(0, 0, -fuselageLength/2 + 1.0);
+            bomberGroup.add(cockpit);
+            
+            // Engines (two on each wing)
+            const engineGeo = new THREE.CylinderGeometry(0.4, 0.4, 0.8, 10);
+            const engineMat = new THREE.MeshStandardMaterial({ color: 0x444444, roughness: 0.5, metalness: 0.5 });
+            
+            // Left engines
+            const engineL1 = new THREE.Mesh(engineGeo, engineMat);
+            engineL1.rotation.x = Math.PI / 2;
+            engineL1.position.set(-wingSpan * 0.35, -fuselageRadius * 0.3, -0.5);
+            bomberGroup.add(engineL1);
+            
+            const engineL2 = new THREE.Mesh(engineGeo, engineMat);
+            engineL2.rotation.x = Math.PI / 2;
+            engineL2.position.set(-wingSpan * 0.15, -fuselageRadius * 0.3, -0.5);
+            bomberGroup.add(engineL2);
+            
+            // Right engines
+            const engineR1 = engineL1.clone();
+            engineR1.position.x *= -1;
+            bomberGroup.add(engineR1);
+            
+            const engineR2 = engineL2.clone();
+            engineR2.position.x *= -1;
+            bomberGroup.add(engineR2);
+            
+            // Propellers (simple discs)
+            const propGeo = new THREE.CylinderGeometry(0.5, 0.5, 0.05, 8);
+            const propMat = new THREE.MeshStandardMaterial({ color: 0x333333, roughness: 0.4, metalness: 0.6 });
+            
+            const propL1 = new THREE.Mesh(propGeo, propMat);
+            propL1.rotation.x = Math.PI / 2;
+            propL1.position.set(-wingSpan * 0.35, -fuselageRadius * 0.3, -0.9);
+            bomberGroup.add(propL1);
+            
+            const propL2 = new THREE.Mesh(propGeo, propMat);
+            propL2.rotation.x = Math.PI / 2;
+            propL2.position.set(-wingSpan * 0.15, -fuselageRadius * 0.3, -0.9);
+            bomberGroup.add(propL2);
+            
+            const propR1 = propL1.clone();
+            propR1.position.x *= -1;
+            bomberGroup.add(propR1);
+            
+            const propR2 = propL2.clone();
+            propR2.position.x *= -1;
+            bomberGroup.add(propR2);
+            
+            bomberGroup.userData.props = [propL1, propL2, propR1, propR2];
+            bomberGroup.userData.bombTimer = Math.random() * 3 + 2; // Initial bomb drop timer
+            bomberGroup.userData.bombCount = Math.floor(Math.random() * 6) + 4; // Number of bombs to drop
+            
+            return bomberGroup;
+        }
+
+        // --- Create Bomb ---
+        function createBomb(position, velocity) {
+            const bombGroup = new THREE.Group();
+            
+            // Main bomb body
+            const bombGeo = new THREE.CylinderGeometry(0.3, 0.3, 1.2, 10);
+            const bombMat = new THREE.MeshStandardMaterial({ color: 0x333333, roughness: 0.7, metalness: 0.3 });
+            const bombBody = new THREE.Mesh(bombGeo, bombMat);
+            bombBody.rotation.x = Math.PI / 2;
+            bombGroup.add(bombBody);
+            
+            // Tail fins
+            const finGeo = new THREE.BoxGeometry(0.1, 0.5, 0.5);
+            const finMat = new THREE.MeshStandardMaterial({ color: 0x555555, roughness: 0.8 });
+            
+            // Create 4 tail fins
+            for (let i = 0; i < 4; i++) {
+                const fin = new THREE.Mesh(finGeo, finMat);
+                fin.rotation.y = (i / 4) * Math.PI * 2;
+                fin.position.set(0, 0, 0.6);
+                bombGroup.add(fin);
+            }
+            
+            // Nose cone
+            const noseGeo = new THREE.ConeGeometry(0.3, 0.4, 10);
+            const noseMat = new THREE.MeshStandardMaterial({ color: 0x222222, roughness: 0.6 });
+            const nose = new THREE.Mesh(noseGeo, noseMat);
+            nose.rotation.x = -Math.PI / 2;
+            nose.position.set(0, 0, -0.8);
+            bombGroup.add(nose);
+            
+            bombGroup.position.copy(position);
+            bombGroup.userData = {
+                isBomb: true,
+                velocity: velocity.clone(),
+                health: 3, // Bombs can be shot down
+                lifetime: 15.0 // Max time before auto-removal
+            };
+            
+            scene.add(bombGroup);
+            bombs.push(bombGroup);
+            
+            return bombGroup;
+        }
+
+        // --- Spawn Bomber Squadron ---
+        function spawnBomberSquadron() {
+            const numBombers = Math.floor(Math.random() * (maxBombers - minBombers + 1)) + minBombers;
+            const numEscorts = Math.floor(Math.random() * (maxEscorts - minEscorts + 1)) + minEscorts;
+            
+            // Choose spawn angle (0 to 2PI)
+            const spawnAngle = Math.random() * Math.PI * 2;
+            
+            // Spawn distance from center
+            const spawnDistance = worldRadius * 0.9;
+            
+            // Spawn altitude
+            const spawnAltitude = 1000 + Math.random() * 200;
+            
+            // Calculate spawn position
+            const spawnX = Math.cos(spawnAngle) * spawnDistance;
+            const spawnZ = Math.sin(spawnAngle) * spawnDistance;
+            
+            // Formation parameters
+            const formationWidth = numBombers * 30;
+            const formationHeight = 50;
+            
+            // Create bombers in formation
+            for (let i = 0; i < numBombers; i++) {
+                const bomber = createBomber();
+                
+                // Position in formation (offset from center)
+                const row = Math.floor(i / 3);
+                const col = i % 3;
+                
+                const offsetX = (col - 1) * 60;
+                const offsetY = -row * 40;
+                
+                bomber.position.set(
+                    spawnX + offsetX,
+                    spawnAltitude + offsetY,
+                    spawnZ
+                );
+                
+                // Point towards city center
+                bomber.lookAt(0, spawnAltitude + offsetY, 0);
+                
+                // Slight random rotation variation
+                bomber.rotation.y += (Math.random() - 0.5) * 0.1;
+                
+                // Set bomber speed (slower than fighters)
+                const bomberSpeedMPS = cruiseSpeed * 0.2 / 3.6;
+                bomber.userData.velocity = new THREE.Vector3(
+                    -Math.cos(spawnAngle),
+                    0,
+                    -Math.sin(spawnAngle)
+                ).multiplyScalar(bomberSpeedMPS);
+                
+                bomber.userData.isBomber = true;
+                bomber.userData.health = 80; // Bombers are tougher
+                bomber.userData.radarVisibleTimer = radarBlipDuration;
+                bomber.userData.formationOffset = new THREE.Vector3(offsetX, offsetY, 0);
+                
+                scene.add(bomber);
+                bombers.push(bomber);
+            }
+            
+            // Create escort fighters
+            for (let i = 0; i < numEscorts; i++) {
+                const escort = createEnemyFighter();
+                
+                // Position around the formation
+                const angle = (i / numEscorts) * Math.PI * 2;
+                const radius = 120 + Math.random() * 60;
+                
+                escort.position.set(
+                    spawnX + Math.cos(angle) * radius,
+                    spawnAltitude + (Math.random() - 0.5) * 60,
+                    spawnZ + Math.sin(angle) * radius
+                );
+                
+                // Point towards formation center
+                escort.lookAt(spawnX, spawnAltitude, spawnZ);
+                
+                // Set escort speed (slightly faster than bombers)
+                const escortSpeedMPS = cruiseSpeed * 0.7 / 3.6;
+                escort.userData.velocity = new THREE.Vector3(
+                    -Math.cos(spawnAngle),
+                    0,
+                    -Math.sin(spawnAngle)
+                ).multiplyScalar(escortSpeedMPS);
+                
+                escort.userData.isEscort = true;
+                escort.userData.formationCenter = new THREE.Vector3(spawnX, spawnAltitude, spawnZ);
+                escort.userData.formationAngle = angle;
+                escort.userData.formationRadius = radius;
+                
+                scene.add(escort);
+                enemies.push(escort);
+            }
+            
+            activeBomberSquadrons++;
+            bomberWarningTimer = 3.0; // Show warning for 3 seconds
+            bomberWarningElement.style.display = 'block';
+            
+            console.log(`Spawned bomber squadron with ${numBombers} bombers and ${numEscorts} escorts`);
+        }
+
+        // --- Audio ---
+        function initAudioOnInteraction() { if (!audioInitialized) initAudio(); if(startPromptElement) startPromptElement.style.display = 'none'; }
+        function initAudio() { if (audioInitialized) return; try { audioContext = new (window.AudioContext || window.webkitAudioContext)(); if (audioContext.state === 'suspended') { audioContext.resume().then(() => { console.log("AudioContext resumed successfully."); setupAudioNodes(); }); } else { setupAudioNodes(); } } catch (e) { console.error("Web Audio API init failed", e); if(startPromptElement) startPromptElement.textContent = "[ Audio Failed ]"; } }
+        function setupAudioNodes() { engineSound = audioContext.createOscillator(); engineGain = audioContext.createGain(); engineSound.type = 'sawtooth'; engineSound.frequency.setValueAtTime(70, audioContext.currentTime); engineGain.gain.setValueAtTime(0.0, audioContext.currentTime); engineSound.connect(engineGain); engineGain.connect(audioContext.destination); engineSound.start(); boostSoundGain = audioContext.createGain(); boostSoundGain.gain.setValueAtTime(0, audioContext.currentTime); boostSoundGain.connect(audioContext.destination); audioInitialized = true; console.log("Audio Initialized."); if (startPromptElement) startPromptElement.style.display = 'none'; }
+        function playSound(type, position = null, intensity = 1.0) { 
+            if (!audioInitialized || audioContext.state !== 'running') return; 
+            let oscType = 'triangle', startFreq = 600, endFreq = 100, startGain = 0.2 * intensity, duration = 0.15, noiseDuration = 0.2; 
+            switch (type) { 
+                case 'shoot': 
+                    oscType = 'triangle'; 
+                    startFreq = 900; 
+                    endFreq = 300; 
+                    startGain = 0.10 * intensity; 
+                    duration = 0.08; 
+                    break; 
+                case 'enemy_shoot': 
+                    oscType = 'square'; 
+                    startFreq = 700; 
+                    endFreq = 200; 
+                    startGain = 0.08 * intensity; 
+                    duration = 0.1; 
+                    break; 
+                case 'player_hit': 
+                    oscType = 'sawtooth'; 
+                    startFreq = 200; 
+                    endFreq = 50; 
+                    startGain = 0.4 * intensity; 
+                    duration = 0.12; 
+                    break; 
+                case 'impact': 
+                    oscType = 'square'; 
+                    startFreq = 400; 
+                    endFreq = 80; 
+                    startGain = 0.25 * intensity; 
+                    duration = 0.07; 
+                    break; 
+                case 'explosion': 
+                    noiseDuration = 0.45 * intensity; 
+                    startGain = 0.5 * intensity; 
+                    const bufSizeEx = Math.max(400, audioContext.sampleRate * noiseDuration); 
+                    const bufEx = audioContext.createBuffer(1, bufSizeEx, audioContext.sampleRate); 
+                    const outEx = bufEx.getChannelData(0); 
+                    let lastOutEx = 0; 
+                    for (let i = 0; i < bufSizeEx; i++) { 
+                        const w = Math.random() * 2 - 1; 
+                        outEx[i] = (lastOutEx + (0.12 * w)) / 1.12; 
+                        lastOutEx = outEx[i]; 
+                        outEx[i] *= 0.7; 
+                    } 
+                    const srcEx = audioContext.createBufferSource(); 
+                    srcEx.buffer = bufEx; 
+                    const gainEx = audioContext.createGain(); 
+                    gainEx.gain.setValueAtTime(startGain, audioContext.currentTime); 
+                    gainEx.gain.exponentialRampToValueAtTime(0.01, audioContext.currentTime + noiseDuration); 
+                    srcEx.connect(gainEx); 
+                    gainEx.connect(audioContext.destination); 
+                    srcEx.start(); 
+                    return; 
+                case 'crash': 
+                    noiseDuration = 0.6 * intensity; 
+                    startGain = 0.6 * intensity; 
+                    const bufSizeCr = Math.max(400, audioContext.sampleRate * noiseDuration); 
+                    const bufCr = audioContext.createBuffer(1, bufSizeCr, audioContext.sampleRate); 
+                    const outCr = bufCr.getChannelData(0); 
+                    let lastOutCr = 0; 
+                    for (let i = 0; i < bufSizeCr; i++) { 
+                        const w = Math.random() * 2 - 1; 
+                        outCr[i] = (lastOutCr + (0.25 * w)) / 1.25; 
+                        lastOutCr = outCr[i]; 
+                        outCr[i] *= 0.9; 
+                    } 
+                    const srcCr = audioContext.createBufferSource(); 
+                    srcCr.buffer = bufCr; 
+                    const gainCr = audioContext.createGain(); 
+                    gainCr.gain.setValueAtTime(startGain, audioContext.currentTime); 
+                    gainCr.gain.exponentialRampToValueAtTime(0.01, audioContext.currentTime + noiseDuration); 
+                    srcCr.connect(gainCr); 
+                    gainCr.connect(audioContext.destination); 
+                    srcCr.start(); 
+                    return; 
+                case 'boost_start': 
+                    if (!boostSoundGain) return; 
+                    const bufSizeB = audioContext.sampleRate * 0.3; 
+                    const bufB = audioContext.createBuffer(1, bufSizeB, audioContext.sampleRate); 
+                    const outB = bufB.getChannelData(0); 
+                    for (let i = 0; i < bufSizeB; i++) outB[i] = (Math.random() * 2 - 1) * 0.4; 
+                    const srcB = audioContext.createBufferSource(); 
+                    srcB.buffer = bufB; 
+                    boostSoundGain.gain.cancelScheduledValues(audioContext.currentTime); 
+                    boostSoundGain.gain.setValueAtTime(0, audioContext.currentTime); 
+                    boostSoundGain.gain.linearRampToValueAtTime(0.3 * intensity, audioContext.currentTime + 0.05); 
+                    boostSoundGain.gain.linearRampToValueAtTime(0, audioContext.currentTime + 0.3); 
+                    srcB.connect(boostSoundGain); 
+                    srcB.start(); 
+                    return; 
+                case 'bomb_drop':
+                    oscType = 'sine';
+                    startFreq = 150;
+                    endFreq = 50;
+                    startGain = 0.15 * intensity;
+                    duration = 0.3;
+                    break;
+                case 'bomb_explosion':
+                    noiseDuration = 0.6 * intensity;
+                    startGain = 0.7 * intensity;
+                    const bufSizeBomb = Math.max(400, audioContext.sampleRate * noiseDuration);
+                    const bufBomb = audioContext.createBuffer(1, bufSizeBomb, audioContext.sampleRate);
+                    const outBomb = bufBomb.getChannelData(0);
+                    let lastOutBomb = 0;
+                    for (let i = 0; i < bufSizeBomb; i++) {
+                        const w = Math.random() * 2 - 1;
+                        outBomb[i] = (lastOutBomb + (0.2 * w)) / 1.2;
+                        lastOutBomb = outBomb[i];
+                        outBomb[i] *= 0.8;
+                    }
+                    const srcBomb = audioContext.createBufferSource();
+                    srcBomb.buffer = bufBomb;
+                    const gainBomb = audioContext.createGain();
+                    gainBomb.gain.setValueAtTime(startGain, audioContext.currentTime);
+                    gainBomb.gain.exponentialRampToValueAtTime(0.01, audioContext.currentTime + noiseDuration);
+                    srcBomb.connect(gainBomb);
+                    gainBomb.connect(audioContext.destination);
+                    srcBomb.start();
+                    return;
+            } 
+            const osc = audioContext.createOscillator(); 
+            const gain = audioContext.createGain(); 
+            osc.type = oscType; 
+            osc.frequency.setValueAtTime(startFreq, audioContext.currentTime); 
+            osc.frequency.exponentialRampToValueAtTime(endFreq, audioContext.currentTime + duration * 0.8); 
+            gain.gain.setValueAtTime(startGain, audioContext.currentTime); 
+            gain.gain.exponentialRampToValueAtTime(0.001, audioContext.currentTime + duration); 
+            osc.connect(gain); 
+            gain.connect(audioContext.destination); 
+            osc.start(); 
+            osc.stop(audioContext.currentTime + duration + 0.05); 
+        }
+
+        // --- Effects ---
+        function createBullet() { 
+            if (isGameOver) return; 
+            const geo = new THREE.SphereGeometry(0.15, 6, 6); 
+            const mat = new THREE.MeshBasicMaterial({ color: 0xfff700 }); 
+            const bullet = new THREE.Mesh(geo, mat); 
+            const forward = _vector3.set(0, 0, -1).applyQuaternion(airplane.quaternion); 
+            const offset = 3.8; 
+            const startPos = airplane.position.clone().addScaledVector(forward, offset); 
+            bullet.position.copy(startPos); 
+            const muzzleVel_mps = forward.normalize().multiplyScalar(bulletSpeed / 3.6); 
+            const worldVel = currentPlaneVelocity.clone().add(muzzleVel_mps); 
+            bullet.userData = { velocity: worldVel, lifetime: bulletLifetime, isBullet: true }; 
+            scene.add(bullet); 
+            bullets.push(bullet); 
+            triggerGunFlash(); 
+        }
+        
+        function triggerGunFlash() { 
+            if (!gunFlash) return; 
+            gunFlash.material.opacity = 0.95; 
+            gunFlash.rotation.z = Math.random() * Math.PI * 2; 
+            activeEffects.push({ type: 'gunflash', mesh: gunFlash, lifetime: 0.06, initialLifetime: 0.06 }); 
+        }
+        
+        function createExplosion(position, size = 1.0) { 
+            playSound('explosion', null, size * 0.8); 
+            triggerCameraShake(0.15 * size); 
+            const sphereGeo = new THREE.SphereGeometry(0.5, 16, 8); 
+            const sphereMat = new THREE.MeshBasicMaterial({ color: 0xffa500, transparent: true, opacity: 0.8, blending: THREE.AdditiveBlending }); 
+            const sphere = new THREE.Mesh(sphereGeo, sphereMat); 
+            sphere.position.copy(position); 
+            scene.add(sphere); 
+            activeEffects.push({ type: 'explosion_sphere', mesh: sphere, lifetime: 0.4 * size, initialLifetime: 0.4 * size, maxScale: targetRadius * 2.8 * size }); 
+            const count = Math.round(55 * size); 
+            const pGeo = new THREE.BufferGeometry(); 
+            const pos = []; 
+            const pMat = new THREE.PointsMaterial({ color: 0xffcc00, size: 0.35, transparent: true, opacity: 0.9, sizeAttenuation: true, depthWrite: false, blending: THREE.AdditiveBlending }); 
+            for (let i = 0; i < count; i++) pos.push(position.x, position.y, position.z); 
+            pGeo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3)); 
+            const particles = new THREE.Points(pGeo, pMat); 
+            particles.userData = { velocities: [] }; 
+            for (let i = 0; i < count; i++) particles.userData.velocities.push( 
+                (Math.random() - 0.5), 
+                (Math.random() - 0.5), 
+                (Math.random() - 0.5) 
+            ); 
+            scene.add(particles); 
+            activeEffects.push({ type: 'explosion_particles', points: particles, lifetime: 0.8 * size, initialLifetime: 0.8 * size, speed: 35 }); 
+        }
+        
+        function triggerCameraShake(intensity) { 
+            cameraShakeIntensity = Math.max(cameraShakeIntensity, intensity); 
+            currentShakeTime = cameraShakeDuration; 
+        }
+        
+        function createEnemyBullet(enemy) { 
+            const geo = new THREE.SphereGeometry(0.12, 6, 6); 
+            const mat = new THREE.MeshBasicMaterial({ color: 0xff4444 }); 
+            const bullet = new THREE.Mesh(geo, mat); 
+            const forward = _vector3.set(0, 0, -1).applyQuaternion(enemy.quaternion); 
+            const offset = 3.0; 
+            const startPos = enemy.position.clone().addScaledVector(forward, offset); 
+            bullet.position.copy(startPos); 
+            const enemyVel = enemy.userData.velocity.clone(); 
+            const muzzleVel_mps = forward.normalize().multiplyScalar(enemyBulletSpeed / 3.6); 
+            const worldVel = enemyVel.add(muzzleVel_mps); 
+            bullet.userData = { velocity: worldVel, lifetime: bulletLifetime * 0.9, isEnemyBullet: true }; 
+            scene.add(bullet); 
+            enemyBullets.push(bullet); 
+            enemy.userData.radarVisibleTimer = radarBlipDuration; 
+            playSound('enemy_shoot'); 
+        }
+
+        // --- Event Listeners ---
+        function setupEventListeners() {
+            window.addEventListener('resize', onWindowResize, false);
+            document.addEventListener('mousemove', onMouseMove, false);
+            document.addEventListener('mousedown', onMouseDown, false);
+            document.addEventListener('mouseup', onMouseUp, false);
+            document.addEventListener('keydown', handleKeyDown, false);
+            document.addEventListener('keyup', handleKeyUp, false);
+            document.addEventListener('click', handleBodyClick, false);
+            
+            // Add mouse wheel event listener for zooming
+            document.addEventListener('wheel', (event) => {
+                if (isGameOver) return;
+                
+                // More sensitive zoom
+                const zoomSpeed = 1.5;  // Increased from 0.5
+                const zoomAmount = -event.deltaY * zoomSpeed * 0.02;
+                
+                // Update camera distance
+                cameraDistance = THREE.MathUtils.clamp(
+                    cameraDistance + zoomAmount,
+                    minCameraDistance,
+                    maxCameraDistance
+                );
+                
+                event.preventDefault();
+            }, { passive: false });
+        } 
+        
+        function removeEventListeners() { 
+            window.removeEventListener('resize', onWindowResize); 
+            window.removeEventListener('mousemove', onMouseMove); 
+            window.removeEventListener('mousedown', onMouseDown); 
+            window.removeEventListener('mouseup', onMouseUp); 
+            window.removeEventListener('keydown', handleKeyDown); 
+            window.removeEventListener('keyup', handleKeyUp); 
+            document.body.removeEventListener('click', handleBodyClick); 
+            for (const key in keyStates) { keyStates[key] = false; } 
+            isShooting = false; 
+        }
+        
+        function onWindowResize() { 
+            camera.aspect = window.innerWidth / window.innerHeight; 
+            camera.updateProjectionMatrix(); 
+            renderer.setSize(window.innerWidth, window.innerHeight); 
+        }
+        
+        function onMouseMove(event) { 
+            if (isGameOver) return; 
+            mouse.x = (event.clientX / window.innerWidth) * 2 - 1; 
+            mouse.y = -(event.clientY / window.innerHeight) * 2 + 1; 
+        }
+        
+        function onMouseDown(event) { 
+            if (isGameOver) return; 
+            if (event.button === 0) isShooting = true; 
+        }
+        
+        function onMouseUp(event) { 
+            if (isGameOver) return; 
+            if (event.button === 0) isShooting = false; 
+        }
+        
+        function handleKeyDown(event) { 
+            if (isGameOver) return; 
+            if (!keyStates[event.code]) { 
+                if(event.code === 'ArrowUp' || event.code === 'ArrowDown') playSound('boost_start'); 
+            }; 
+            keyStates[event.code] = true; 
+        }
+        
+        function handleKeyUp(event) { 
+            keyStates[event.code] = false; 
+        }
+        
+        function handleBodyClick() { 
+            initAudioOnInteraction(); 
+            if (isGameOver) restartGame(); 
+        }
+
+        // --- Game Logic Updates ---
+        function updatePlayer(deltaTime) { 
+            if (!airplane) return; 
+            if (isGameOver) { 
+                airplane.position.addScaledVector(currentPlaneVelocity, deltaTime); 
+                currentPlaneVelocity.y -= 9.81 * deltaTime * 1.5; 
+                airplane.rotation.z += 0.6 * deltaTime * Math.sign(currentPlaneVelocity.x); 
+                airplane.rotation.x += 0.4 * deltaTime; 
+                if (skyMesh) skyMesh.position.copy(camera.position); 
+                return; 
+            } 
+            let targetSpeedFactor = 1.0; 
+            if (keyStates['ArrowUp']) { 
+                targetSpeedFactor = maxSpeedBoostFactor; 
+                currentSpeedFactor += boostForce * deltaTime; 
+            } else if (keyStates['ArrowDown']) { 
+                targetSpeedFactor = minSpeedBrakeFactor; 
+                currentSpeedFactor -= boostForce * 1.5 * deltaTime; 
+            } else { 
+                currentSpeedFactor += (1.0 - currentSpeedFactor) * speedNormalizationRate * deltaTime; 
+            } 
+            const worldForward = _vector3.set(0, 0, -1).applyQuaternion(airplane.quaternion); 
+            const pitchAngleEffect = -worldForward.y * gravityFactor; 
+            currentSpeedFactor += pitchAngleEffect * deltaTime; 
+            currentSpeedFactor = Math.max(minSpeedBrakeFactor, Math.min(currentSpeedFactor, maxSpeedBoostFactor)); 
+            const targetYawRate = -mouse.x * yawSpeedArcade; 
+            const targetPitchRate = mouse.y * pitchSpeed; 
+            const rateLerpFactor = 1.0 - Math.pow(0.1, deltaTime); 
+            currentYawRate = THREE.MathUtils.lerp(currentYawRate, targetYawRate, rateLerpFactor); 
+            currentPitchRate = THREE.MathUtils.lerp(currentPitchRate, targetPitchRate, rateLerpFactor); 
+            currentYawRate *= Math.pow(controlDamping, deltaTime * 60); 
+            currentPitchRate *= Math.pow(controlDamping, deltaTime * 60); 
+            if (keyStates['KeyQ']) currentYawRate += yawSpeedManual * 20 * deltaTime; 
+            if (keyStates['KeyE']) currentYawRate -= yawSpeedManual * 20 * deltaTime; 
+            airplane.rotateX(currentPitchRate * deltaTime); 
+            airplane.rotateY(currentYawRate * deltaTime); 
+            const targetRollAngle = currentYawRate * autoRollFactor; 
+            const clampedTargetRollAngle = THREE.MathUtils.clamp(targetRollAngle, -maxAutoRollAngle, maxAutoRollAngle); 
+            const currentRollAngle = airplane.rotation.z; 
+            const rollDifference = clampedTargetRollAngle - currentRollAngle; 
+            const autoRollRate = rollDifference * 6.0 * deltaTime; 
+            airplane.rotateZ(autoRollRate); 
+            const turnInputMagnitude = Math.abs(currentYawRate / yawSpeedArcade); 
+            if (turnInputMagnitude > 0.2) { 
+                const bleedAmount = turnInputMagnitude * 0.20 * currentSpeedFactor * deltaTime; 
+                currentSpeedFactor = Math.max(minSpeedBrakeFactor, currentSpeedFactor - bleedAmount); 
+            } 
+            worldForward.set(0, 0, -1).applyQuaternion(airplane.quaternion); 
+            const currentSpeedMPS = (cruiseSpeed * currentSpeedFactor) / 3.6; 
+            currentPlaneVelocity.copy(worldForward).multiplyScalar(currentSpeedMPS); 
+            const displacement = currentPlaneVelocity.clone().multiplyScalar(deltaTime); 
+            airplane.position.add(displacement); 
+            const groundCheckHeight = 2.0; 
+            if (airplane.position.y < groundLevel + groundCheckHeight) { 
+                const verticalVelocity = currentPlaneVelocity.y; 
+                if (verticalVelocity < -2.5) { 
+                    const damage = Math.min(Math.abs(verticalVelocity) * 7, 80); 
+                    planeHealth -= damage; 
+                    playSound('crash', null, Math.min(1.5, Math.abs(verticalVelocity) / 10)); 
+                    triggerCameraShake(0.25 + Math.min(0.35, Math.abs(verticalVelocity) / 15)); 
+                } 
+                airplane.position.y = groundLevel + groundCheckHeight; 
+                currentSpeedFactor *= 0.4; 
+                currentPlaneVelocity.y = 0; 
+                planeHealth = Math.max(0, planeHealth); 
+            } 
+            if (planeHealth <= 0) endGame(); 
+            currentCooldown = Math.max(0, currentCooldown - deltaTime); 
+            if (isShooting && currentCooldown <= 0 && !isGameOver) { 
+                createBullet(); 
+                playSound('shoot'); 
+                currentCooldown = shootCooldown; 
+            } 
+            if (propeller) propeller.rotation.z -= (currentSpeedFactor + 0.1) * deltaTime * 60; 
+            if (skyMesh) skyMesh.position.copy(camera.position); 
+            if (playerHitFlashTime > 0) { 
+                playerHitFlashTime -= deltaTime; 
+                hitOverlayElement.style.opacity = Math.max(0, playerHitFlashTime / playerHitFlashDuration) * 0.5; 
+            } 
+        }
+        
+        function updateEnemies(deltaTime) { 
+            if (isGameOver || !airplane) return; 
+            for (let i = enemies.length - 1; i >= 0; i--) { 
+                const enemy = enemies[i]; 
+                if (!enemy.parent) { 
+                    enemies.splice(i, 1); 
+                    continue; 
+                } 
+                
+                // Skip if this is an escort in a bomber squadron (handled in updateBombers)
+                if (enemy.userData.isEscort) continue;
+                
+                const distSq = enemy.position.distanceToSquared(airplane.position); 
+                const enemyForward = _vector3.set(0, 0, -1).applyQuaternion(enemy.quaternion); 
+                const directionToPlayer = _vector3.subVectors(airplane.position, enemy.position).normalize(); 
+                const angleToPlayer = enemyForward.angleTo(directionToPlayer); 
+                enemy.userData.radarVisibleTimer = Math.max(0, enemy.userData.radarVisibleTimer - deltaTime); 
+                
+                if (enemy.userData.state === 'PATROL') { 
+                    if (distSq < enemyDetectionRangeSq) { 
+                        enemy.userData.state = 'ATTACK'; 
+                    } 
+                    enemy.position.addScaledVector(enemy.userData.velocity, deltaTime); 
+                } else if (enemy.userData.state === 'ATTACK') { 
+                    if (distSq > enemyDetectionRangeSq * 1.8) { 
+                        enemy.userData.state = 'PATROL'; 
+                    } else { 
+                        const targetQuaternion = _quat; 
+                        const up = _vector3.set(0, 1, 0); 
+                        const targetMatrix = new THREE.Matrix4().lookAt(enemy.position, airplane.position, up); 
+                        targetQuaternion.setFromRotationMatrix(targetMatrix); 
+                        enemy.quaternion.slerp(targetQuaternion, enemyTurnSpeed * deltaTime); 
+                        enemyForward.set(0,0,-1).applyQuaternion(enemy.quaternion); 
+                        const enemySpeedMPS = enemy.userData.velocity.length(); 
+                        enemy.userData.velocity.copy(enemyForward).multiplyScalar(enemySpeedMPS); 
+                        enemy.position.addScaledVector(enemy.userData.velocity, deltaTime); 
+                        enemy.userData.shootTimer -= deltaTime; 
+                        if (enemy.userData.shootTimer <= 0 && angleToPlayer < enemyAttackAngle) { 
+                            createEnemyBullet(enemy); 
+                            enemy.userData.shootTimer = enemyShootCooldown + (Math.random()-0.5) * 0.5; 
+                        } 
+                    } 
+                } 
+                
+                if (enemy.position.y < groundLevel + 5) { 
+                    enemy.position.y = groundLevel + 5; 
+                    enemy.rotateX(0.05); 
+                } 
+                
+                if (enemy.userData.propeller) { 
+                    enemy.userData.propeller.rotation.z -= deltaTime * 45; 
+                } 
+            } 
+        }
+        
+        function updateBombers(deltaTime) {
+            if (isGameOver || !airplane) return;
+            
+            for (let i = bombers.length - 1; i >= 0; i--) {
+                const bomber = bombers[i];
+                if (!bomber.parent) {
+                    bombers.splice(i, 1);
+                    continue;
+                }
+                
+                // Update bomber position based on velocity
+                bomber.position.addScaledVector(bomber.userData.velocity, deltaTime);
+                
+                // Rotate props
+                if (bomber.userData.props) {
+                    bomber.userData.props.forEach(prop => {
+                        prop.rotation.z -= deltaTime * 30;
+                    });
+                }
+                
+                // Check if bomber has reached the city center (x,z near 0,0)
+                const distanceToCenterSq = bomber.position.x * bomber.position.x + bomber.position.z * bomber.position.z;
+                
+                // Bomb dropping logic
+                bomber.userData.bombTimer -= deltaTime;
+                if (bomber.userData.bombTimer <= 0 && bomber.userData.bombCount > 0 && 
+                    distanceToCenterSq < cityCenterRadiusSq) {
+                    
+                    // Drop a bomb
+                    const bombVelocity = new THREE.Vector3(
+                        bomber.userData.velocity.x * 0.8,
+                        -50, // Initial downward velocity
+                        bomber.userData.velocity.z * 0.8
+                    );
+                    
+                    createBomb(bomber.position.clone(), bombVelocity);
+                    bomber.userData.bombTimer = Math.random() * 2 + 1; // Next bomb in 1-3 seconds
+                    bomber.userData.bombCount--;
+                    playSound('bomb_drop', bomber.position);
+                }
+                
+                // Check if bomber has flown past the map
+                const distanceFromSpawn = bomber.position.length();
+                if (distanceFromSpawn > worldRadius * 1.2) {
+                    scene.remove(bomber);
+                    bombers.splice(i, 1);
+                    continue;
+                }
+                
+                // Update radar visibility
+                bomber.userData.radarVisibleTimer = Math.max(0, bomber.userData.radarVisibleTimer - deltaTime);
+                
+                // Check for player bullets hitting the bomber
+                for (let j = bullets.length - 1; j >= 0; j--) {
+                    const bullet = bullets[j];
+                    if (bullet.parent && bomber.parent && 
+                        bullet.position.distanceTo(bomber.position) < 4.0) {
+                        
+                        playSound('impact', bomber.position, 0.9);
+                        bomber.userData.health -= 10;
+                        
+                        if (bomber.userData.health <= 0) {
+                            createExplosion(bomber.position.clone(), 1.5);
+                            bomber.userData.hit = true;
+                            scene.remove(bomber);
+                            bombers.splice(i, 1);
+                            score += bomberValue;
+                            break;
+                        } else {
+                            // Show hit effect
+                            bomber.userData.radarVisibleTimer = radarBlipDuration;
+                        }
+                        
+                        scene.remove(bullet);
+                        bullets.splice(j, 1);
+                    }
+                }
+            }
+            
+            // Update escort fighters
+            for (let i = enemies.length - 1; i >= 0; i--) {
+                const enemy = enemies[i];
+                if (!enemy.parent || !enemy.userData.isEscort) {
+                    continue;
+                }
+                
+                // Escorts try to stay near their formation center but also engage player
+                const distToPlayerSq = enemy.position.distanceToSquared(airplane.position);
+                const enemyForward = _vector3.set(0, 0, -1).applyQuaternion(enemy.quaternion);
+                
+                if (distToPlayerSq < enemyDetectionRangeSq) {
+                    // Engage player if close
+                    const directionToPlayer = _vector3.subVectors(airplane.position, enemy.position).normalize();
+                    const angleToPlayer = enemyForward.angleTo(directionToPlayer);
+                    
+                    const targetQuaternion = _quat;
+                    const up = _vector3.set(0, 1, 0);
+                    const targetMatrix = new THREE.Matrix4().lookAt(enemy.position, airplane.position, up);
+                    targetQuaternion.setFromRotationMatrix(targetMatrix);
+                    enemy.quaternion.slerp(targetQuaternion, enemyTurnSpeed * deltaTime * 0.8); // Slightly slower turning
+                    
+                    enemyForward.set(0,0,-1).applyQuaternion(enemy.quaternion);
+                    const enemySpeedMPS = enemy.userData.velocity.length();
+                    enemy.userData.velocity.copy(enemyForward).multiplyScalar(enemySpeedMPS);
+                    
+                    enemy.userData.shootTimer -= deltaTime;
+                    if (enemy.userData.shootTimer <= 0 && angleToPlayer < enemyAttackAngle) {
+                        createEnemyBullet(enemy);
+                        enemy.userData.shootTimer = enemyShootCooldown + (Math.random()-0.5) * 0.5;
+                    }
+                } else {
+                    // Return to formation position
+                    const formationPos = new THREE.Vector3(
+                        enemy.userData.formationCenter.x + Math.cos(enemy.userData.formationAngle) * enemy.userData.formationRadius,
+                        enemy.userData.formationCenter.y + (Math.random() - 0.5) * 20,
+                        enemy.userData.formationCenter.z + Math.sin(enemy.userData.formationAngle) * enemy.userData.formationRadius
+                    );
+                    
+                    const directionToFormation = _vector3.subVectors(formationPos, enemy.position).normalize();
+                    const targetQuaternion = _quat;
+                    const up = _vector3.set(0, 1, 0);
+                    const targetMatrix = new THREE.Matrix4().lookAt(enemy.position, formationPos, up);
+                    targetQuaternion.setFromRotationMatrix(targetMatrix);
+                    enemy.quaternion.slerp(targetQuaternion, enemyTurnSpeed * deltaTime * 0.5);
+                    
+                    enemyForward.set(0,0,-1).applyQuaternion(enemy.quaternion);
+                    const enemySpeedMPS = enemy.userData.velocity.length();
+                    enemy.userData.velocity.copy(enemyForward).multiplyScalar(enemySpeedMPS);
+                }
+                
+                enemy.position.addScaledVector(enemy.userData.velocity, deltaTime);
+                
+                // Rotate props
+                if (enemy.userData.propeller) {
+                    enemy.userData.propeller.rotation.z -= deltaTime * 45;
+                }
+                
+                // Check if escort has flown past the map
+                const distanceFromSpawn = enemy.position.length();
+                if (distanceFromSpawn > worldRadius * 1.2) {
+                    scene.remove(enemy);
+                    enemies.splice(i, 1);
+                    continue;
+                }
+            }
+            
+            // Check if squadron is destroyed or has left the map
+            if (bombers.length === 0) {
+                // Remove any remaining escorts
+                for (let i = enemies.length - 1; i >= 0; i--) {
+                    if (enemies[i].userData.isEscort) {
+                        scene.remove(enemies[i]);
+                        enemies.splice(i, 1);
+                    }
+                }
+                
+                if (activeBomberSquadrons > 0) {
+                    activeBomberSquadrons--;
+                }
+            }
+        }
+        
+        function updateBombs(deltaTime) {
+            for (let i = bombs.length - 1; i >= 0; i--) {
+                const bomb = bombs[i];
+                if (!bomb.parent) {
+                    bombs.splice(i, 1);
+                    continue;
+                }
+                
+                // Apply gravity
+                bomb.userData.velocity.y -= 9.81 * deltaTime * 2; // Faster falling
+                bomb.position.addScaledVector(bomb.userData.velocity, deltaTime);
+                
+                // Rotate bomb as it falls
+                bomb.rotation.x += deltaTime * 2;
+                bomb.rotation.z += deltaTime * 1.5;
+                
+                // Check for ground impact
+                if (bomb.position.y <= groundLevel + 0.5) {
+                    // Create big explosion
+                    createExplosion(bomb.position.clone(), 2.0);
+                    playSound('bomb_explosion', bomb.position);
+                    triggerCameraShake(0.3);
+                    
+                    // Check if bomb hit city center for extra points
+                    const distToCenterSq = bomb.position.x * bomb.position.x + bomb.position.z * bomb.position.z;
+                    if (distToCenterSq < cityCenterRadiusSq) {
+                        score += bombValue * 2; // Bonus for city center hits
+                    } else {
+                        score += bombValue;
+                    }
+                    
+                    scene.remove(bomb);
+                    bombs.splice(i, 1);
+                    continue;
+                }
+                
+                // Check for bullet hits
+                for (let j = bullets.length - 1; j >= 0; j--) {
+                    const bullet = bullets[j];
+                    if (bullet.parent && bomb.parent && 
+                        bullet.position.distanceTo(bomb.position) < 1.5) {
+                        
+                        bomb.userData.health--;
+                        playSound('impact', bomb.position, 0.7);
+                        
+                        if (bomb.userData.health <= 0) {
+                            // Smaller explosion if bomb is shot down
+                            createExplosion(bomb.position.clone(), 0.8);
+                            playSound('explosion', bomb.position, 0.6);
+                            score += bombValue;
+                            scene.remove(bomb);
+                            bombs.splice(i, 1);
+                        }
+                        
+                        scene.remove(bullet);
+                        bullets.splice(j, 1);
+                        break;
+                    }
+                }
+                
+                // Remove bombs that are too old
+                bomb.userData.lifetime -= deltaTime;
+                if (bomb.userData.lifetime <= 0) {
+                    scene.remove(bomb);
+                    bombs.splice(i, 1);
+                }
+            }
+        }
+        
+        function updateTargets(deltaTime) { 
+            if (isGameOver) return; 
+            targets.forEach(target => { 
+                if (target.userData.velocity && target.parent) { 
+                    target.position.addScaledVector(target.userData.velocity, deltaTime * visualSpeedMultiplier / 6); 
+                    const bounds = target.userData.moveBounds; 
+                    if (target.position.x < bounds.minX || target.position.x > bounds.maxX) { 
+                        target.userData.velocity.x *= -1; 
+                        target.position.x = THREE.MathUtils.clamp(target.position.x, bounds.minX, bounds.maxX); 
+                    } 
+                    if (target.position.z < bounds.minZ || target.position.z > bounds.maxZ) { 
+                        target.userData.velocity.z *= -1; 
+                        target.position.z = THREE.MathUtils.clamp(target.position.z, bounds.minZ, bounds.maxZ); 
+                    } 
+                } 
+            }); 
+        }
+        
+        function updateBullets(deltaTime) { 
+            for (let i = bullets.length - 1; i >= 0; i--) { 
+                const bullet = bullets[i]; 
+                if (!bullet.parent) { 
+                    bullets.splice(i, 1); 
+                    continue; 
+                } 
+                bullet.position.addScaledVector(bullet.userData.velocity, deltaTime); 
+                bullet.userData.lifetime -= deltaTime; 
+                let hit = false; 
+                for (let j = targets.length - 1; j >= 0; j--) { 
+                    const target = targets[j]; 
+                    if (!target.userData.hit && target.parent && bullet.position.distanceTo(target.position) < targetRadius + 0.8) { 
+                        playSound('impact', target.position); 
+                        createExplosion(target.position.clone(), 1.0); 
+                        target.userData.hit = true; 
+                        scene.remove(target); 
+                        score += targetValue; 
+                        hit = true; 
+                        break; 
+                    } 
+                } 
+                if(hit) { 
+                    scene.remove(bullet); 
+                    bullets.splice(i, 1); 
+                    continue; 
+                } 
+                for (let j = enemies.length - 1; j >= 0; j--) { 
+                    const enemy = enemies[j]; 
+                    if (!enemy.userData.hit && enemy.parent && bullet.position.distanceTo(enemy.position) < 3.0) { 
+                        playSound('impact', enemy.position, 0.9); 
+                        enemy.userData.health -= 15; 
+                        if (enemy.userData.health <= 0) { 
+                            createExplosion(enemy.position.clone(), 1.2); 
+                            enemy.userData.hit = true; 
+                            scene.remove(enemy); 
+                            score += enemyValue; 
+                        } else { 
+                            /* Hit */ 
+                        } 
+                        hit = true; 
+                        break; 
+                    } 
+                } 
+                if (bullet.userData.lifetime <= 0 || hit) { 
+                    scene.remove(bullet); 
+                    bullets.splice(i, 1); 
+                } 
+            } 
+            for (let i = targets.length - 1; i >= 0; i--) if (targets[i].userData.hit) targets.splice(i, 1); 
+            for (let i = enemies.length - 1; i >= 0; i--) if (enemies[i].userData.hit) enemies.splice(i, 1); 
+        }
+        
+        function updateEnemyBullets(deltaTime) { 
+            if (isGameOver || !airplane) return; 
+            const playerCollisionRadius = 3.5; 
+            for (let i = enemyBullets.length - 1; i >= 0; i--) { 
+                const bullet = enemyBullets[i]; 
+                if (!bullet.parent) { 
+                    enemyBullets.splice(i, 1); 
+                    continue; 
+                } 
+                bullet.position.addScaledVector(bullet.userData.velocity, deltaTime); 
+                bullet.userData.lifetime -= deltaTime; 
+                let hitPlayer = false; 
+                if (bullet.position.distanceTo(airplane.position) < playerCollisionRadius) { 
+                    planeHealth -= enemyBulletDamage; 
+                    planeHealth = Math.max(0, planeHealth); 
+                    playSound('player_hit'); 
+                    playerHitFlashTime = playerHitFlashDuration; 
+                    hitPlayer = true; 
+                    if (planeHealth <= 0) endGame(); 
+                } 
+                if (bullet.userData.lifetime <= 0 || hitPlayer) { 
+                    scene.remove(bullet); 
+                    enemyBullets.splice(i, 1); 
+                } 
+            } 
+        }
+        
+        function updateEffects(deltaTime) { 
+            for (let i = activeEffects.length - 1; i >= 0; i--) { 
+                const effect = activeEffects[i]; 
+                effect.lifetime -= deltaTime; 
+                if (effect.lifetime <= 0) { 
+                    if (effect.mesh) scene.remove(effect.mesh); 
+                    if (effect.points) scene.remove(effect.points); 
+                    activeEffects.splice(i, 1); 
+                } else { 
+                    const lifeRatio = Math.max(0, effect.lifetime / effect.initialLifetime); 
+                    switch (effect.type) { 
+                        case 'gunflash': 
+                            effect.mesh.material.opacity = lifeRatio * 0.95; 
+                            break; 
+                        case 'explosion_sphere': 
+                            effect.mesh.material.opacity = lifeRatio * 0.8; 
+                            const scale = (1 - lifeRatio) * effect.maxScale + 0.5; 
+                            effect.mesh.scale.set(scale, scale, scale); 
+                            break; 
+                        case 'explosion_particles': 
+                            effect.points.material.opacity = lifeRatio * 0.9; 
+                            const positions = effect.points.geometry.attributes.position.array; 
+                            const velocities = effect.points.userData.velocities; 
+                            for(let k=0; k < positions.length / 3; k++){ 
+                                positions[k*3 + 0] += velocities[k*3 + 0] * deltaTime * effect.speed; 
+                                positions[k*3 + 1] += velocities[k*3 + 1] * deltaTime * effect.speed; 
+                                positions[k*3 + 2] += velocities[k*3 + 2] * deltaTime * effect.speed; 
+                            } 
+                            effect.points.geometry.attributes.position.needsUpdate = true; 
+                            break; 
+                    } 
+                } 
+            } 
+        }
+        
+        function updateRadar(deltaTime) { 
+            if (!radarBlipsContainer || !airplane || !radarPlayerArrow) return; 
+            radarBlipsContainer.innerHTML = ''; 
+            playerForwardRadar.set(0, 0, -1).applyQuaternion(airplane.quaternion).setY(0).normalize(); 
+            playerRightRadar.set(1, 0, 0).applyQuaternion(airplane.quaternion).setY(0).normalize(); 
+            const radarRadiusPixels = radarBlipsContainer.offsetWidth / 2; 
+            
+            // Enemy fighters
+            enemies.forEach(enemy => { 
+                if (enemy.userData.radarVisibleTimer > 0 && enemy.parent) { 
+                    vecToEnemy.subVectors(enemy.position, airplane.position); 
+                    const dist = vecToEnemy.length(); 
+                    if (dist < radarRange) { 
+                        const relativeZ = vecToEnemy.dot(playerForwardRadar); 
+                        const relativeX = vecToEnemy.dot(playerRightRadar); 
+                        const scale = radarRadiusPixels / radarRange; 
+                        let radarX = relativeX * scale; 
+                        let radarY = -relativeZ * scale; 
+                        const blipDist = Math.sqrt(radarX * radarX + radarY * radarY); 
+                        if (blipDist > radarRadiusPixels * 0.95) { 
+                            const clampFactor = (radarRadiusPixels * 0.95) / blipDist; 
+                            radarX *= clampFactor; 
+                            radarY *= clampFactor; 
+                        } 
+                        const blip = document.createElement('div'); 
+                        blip.className = 'radar-blip'; 
+                        blip.style.left = `calc(50% + ${radarX.toFixed(1)}px)`; 
+                        blip.style.top = `calc(50% + ${radarY.toFixed(1)}px)`; 
+                        blip.style.opacity = Math.max(0.1, (enemy.userData.radarVisibleTimer / radarBlipDuration) * 0.9).toFixed(2); 
+                        radarBlipsContainer.appendChild(blip); 
+                    } 
+                } 
+            }); 
+            
+            // Bombers
+            bombers.forEach(bomber => {
+                if (bomber.userData.radarVisibleTimer > 0 && bomber.parent) {
+                    vecToEnemy.subVectors(bomber.position, airplane.position);
+                    const dist = vecToEnemy.length();
+                    if (dist < radarRange) {
+                        const relativeZ = vecToEnemy.dot(playerForwardRadar);
+                        const relativeX = vecToEnemy.dot(playerRightRadar);
+                        const scale = radarRadiusPixels / radarRange;
+                        let radarX = relativeX * scale;
+                        let radarY = -relativeZ * scale;
+                        const blipDist = Math.sqrt(radarX * radarX + radarY * radarY);
+                        if (blipDist > radarRadiusPixels * 0.95) {
+                            const clampFactor = (radarRadiusPixels * 0.95) / blipDist;
+                            radarX *= clampFactor;
+                            radarY *= clampFactor;
+                        }
+                        const blip = document.createElement('div');
+                        blip.className = 'radar-blip bomber';
+                        blip.style.left = `calc(50% + ${radarX.toFixed(1)}px)`;
+                        blip.style.top = `calc(50% + ${radarY.toFixed(1)}px)`;
+                        blip.style.opacity = Math.max(0.1, (bomber.userData.radarVisibleTimer / radarBlipDuration) * 0.9).toFixed(2);
+                        radarBlipsContainer.appendChild(blip);
+                    }
+                }
+            });
+            
+            // Bombs
+            bombs.forEach(bomb => {
+                vecToEnemy.subVectors(bomb.position, airplane.position);
+                const dist = vecToEnemy.length();
+                if (dist < radarRange) {
+                    const relativeZ = vecToEnemy.dot(playerForwardRadar);
+                    const relativeX = vecToEnemy.dot(playerRightRadar);
+                    const scale = radarRadiusPixels / radarRange;
+                    let radarX = relativeX * scale;
+                    let radarY = -relativeZ * scale;
+                    const blipDist = Math.sqrt(radarX * radarX + radarY * radarY);
+                    if (blipDist > radarRadiusPixels * 0.95) {
+                        const clampFactor = (radarRadiusPixels * 0.95) / blipDist;
+                        radarX *= clampFactor;
+                        radarY *= clampFactor;
+                    }
+                    const blip = document.createElement('div');
+                    blip.className = 'radar-blip bomb';
+                    blip.style.left = `calc(50% + ${radarX.toFixed(1)}px)`;
+                    blip.style.top = `calc(50% + ${radarY.toFixed(1)}px)`;
+                    blip.style.opacity = Math.max(0.1, (bomb.userData.lifetime / 15) * 0.7).toFixed(2);
+                    radarBlipsContainer.appendChild(blip);
+                }
+            });
+            
+            if (playerForwardRadar.lengthSq() > 0.001) { 
+                const angleRadians = Math.atan2(playerForwardRadar.x, playerForwardRadar.z); 
+                const angleDegrees = angleRadians * (180 / Math.PI); 
+                radarPlayerArrow.style.transform = `translate(-50%, -100%) rotate(${angleDegrees.toFixed(1)}deg)`; 
+            } else { 
+                radarPlayerArrow.style.transform = `translate(-50%, -100%) rotate(0deg)`; 
+            } 
+        }
+        
+        function updateCamera(deltaTime) {
+            if (!airplane) return;
+            
+            // Calculate desired camera position based on current distance
+            const baseOffset = new THREE.Vector3(0, 5.5, 1).normalize().multiplyScalar(cameraDistance);
+            const cameraOffset = baseOffset.clone().applyQuaternion(airplane.quaternion);
+            const desiredCameraPosition = airplane.position.clone().add(cameraOffset);
+            
+            // Smooth camera follow
+            const smoothFactor = 0.1;
+            const lerpFactor = 1.0 - Math.pow(smoothFactor, deltaTime);
+            camera.position.lerp(desiredCameraPosition, lerpFactor);
+            
+            // Look slightly ahead of plane
+            const lookAheadDistance = THREE.MathUtils.lerp(1, 10, cameraDistance/50) * (1 + currentSpeedFactor * 0.5);
+            const lookAtTargetPos = new THREE.Vector3(0, 0, -lookAheadDistance)
+                .applyQuaternion(airplane.quaternion)
+                .add(airplane.position);
+            camera.lookAt(lookAtTargetPos);
+            
+            // Camera shake effect
+            if (currentShakeTime > 0) {
+                currentShakeTime -= deltaTime;
+                const shakeAmount = cameraShakeIntensity * Math.sin(currentShakeTime * Math.PI / cameraShakeDuration);
+                const shakeOffset = new THREE.Vector3(
+                    (Math.random() - 0.5) * shakeAmount,
+                    (Math.random() - 0.5) * shakeAmount,
+                    (Math.random() - 0.5) * shakeAmount
+                );
+                camera.position.add(shakeOffset);
+                if (currentShakeTime <= 0) cameraShakeIntensity = 0;
+            }
+            
+            // Sun glare effect
+            if (sunGlareOverlay && sunDirection.lengthSq() > 0) {
+                camera.getWorldDirection(cameraDirection);
+                const angleToSun = cameraDirection.angleTo(sunDirection);
+                const maxGlareAngle = Math.PI / 6;
+                const glareFactor = Math.max(0, 1.0 - angleToSun / maxGlareAngle);
+                const glareOpacity = Math.pow(glareFactor, 2.5) * 0.8;
+                sunGlareOverlay.style.opacity = glareOpacity.toFixed(2);
+            } else if (sunGlareOverlay) {
+                sunGlareOverlay.style.opacity = 0;
+            }
+        }
+        
+        function updateUI(deltaTime) { 
+            scoreElement.textContent = score; 
+            healthElement.textContent = Math.round(planeHealth); 
+            healthElement.style.color = planeHealth < 30 ? '#ff4444' : (planeHealth < 60 ? '#ffcc00' : '#ffffff'); 
+            speedElement.textContent = Math.round(Math.max(0, cruiseSpeed * currentSpeedFactor)); 
+            altitudeElement.textContent = Math.max(0, Math.round(airplane.position.y - groundLevel)); 
+            const cooldownPercentage = 100 * (1 - currentCooldown / shootCooldown); 
+            cooldownBarElement.style.width = `${cooldownPercentage}%`; 
+            cooldownBarElement.style.backgroundColor = (currentCooldown <= 0) ? '#4CAF50' : '#ff9800'; 
+            bomberCountElement.textContent = bombers.length;
+            
+            // Update bomber warning
+            if (bomberWarningTimer > 0) {
+                bomberWarningTimer -= deltaTime;
+                if (bomberWarningTimer <= 0) {
+                    bomberWarningElement.style.display = 'none';
+                }
+            }
+        }
+        
+        function updateAudio(deltaTime) { 
+            if (!audioInitialized || audioContext.state !== 'running') return; 
+            const speedRatio = Math.max(0, currentSpeedFactor - minSpeedBrakeFactor) / (maxSpeedBoostFactor - minSpeedBrakeFactor); 
+            const targetFreq = 70 + speedRatio * 220; 
+            const targetGain = 0.04 + speedRatio * 0.38; 
+            const rampTime = 0.2; 
+            engineSound.frequency.exponentialRampToValueAtTime(Math.max(25, targetFreq), audioContext.currentTime + rampTime); 
+            engineGain.gain.exponentialRampToValueAtTime(Math.min(targetGain, 0.48), audioContext.currentTime + rampTime); 
+        }
+
+        // --- setupUIReferences ---
+        function setupUIReferences(){ 
+            scoreElement = document.getElementById('score'); 
+            healthElement = document.getElementById('health'); 
+            speedElement = document.getElementById('speed'); 
+            altitudeElement = document.getElementById('altitude'); 
+            cooldownBarElement = document.getElementById('cooldown-bar'); 
+            gameOverElement = document.getElementById('game-over'); 
+            finalScoreElement = document.getElementById('final-score'); 
+            hitOverlayElement = document.getElementById('hit-overlay'); 
+            radarBlipsContainer = document.getElementById('radar-blips'); 
+            radarPlayerArrow = document.getElementById('radar-player-arrow'); 
+            sunGlareOverlay = document.getElementById('sun-glare-overlay'); 
+            startPromptElement = document.getElementById('start-prompt');
+            bomberWarningElement = document.getElementById('bomber-warning');
+            bomberCountElement = document.getElementById('bomber-count');
+        }
+
+        // --- endGame, restartGame ---
+        function endGame() { 
+            if (isGameOver) return; 
+            console.log("Game Over!"); 
+            isGameOver = true; 
+            finalScoreElement.textContent = score; 
+            gameOverElement.style.display = 'block'; 
+            if (engineGain) engineGain.gain.exponentialRampToValueAtTime(0.001, audioContext.currentTime + 1.0); 
+            if (boostSoundGain) { 
+                boostSoundGain.gain.cancelScheduledValues(audioContext.currentTime); 
+                boostSoundGain.gain.setValueAtTime(0, audioContext.currentTime); 
+            } 
+            triggerCameraShake(0.5); 
+            playSound('crash', null, 1.8); 
+        }
+        
+        function restartGame() { 
+            console.log("Restarting game..."); 
+            removeEventListeners(); 
+            const disposeObject = (obj) => { 
+                if (obj.geometry) obj.geometry.dispose(); 
+                if (obj.material) { 
+                    if (Array.isArray(obj.material)) { 
+                        obj.material.forEach(m => { 
+                            if(m.map) m.map.dispose(); 
+                            m.dispose(); 
+                        }); 
+                    } else { 
+                        if(obj.material.map) obj.material.map.dispose(); 
+                        obj.material.dispose(); 
+                    } 
+                } 
+            }; 
+            scene.traverse(disposeObject); 
+            cityFeatures.traverse(disposeObject); 
+            if(instancedBuildings) { instancedBuildings.geometry.dispose(); instancedBuildings.material.dispose(); } 
+            if(instancedBuildingsDark) { instancedBuildingsDark.geometry.dispose(); instancedBuildingsDark.material.dispose(); } 
+            if(instancedTreeTrunks) { instancedTreeTrunks.geometry.dispose(); instancedTreeTrunks.material.dispose(); } 
+            if(instancedTreeTops) { instancedTreeTops.geometry.dispose(); instancedTreeTops.material.dispose(); } 
+            while(scene.children.length > 0){ scene.remove(scene.children[0]); } 
+            while(cityFeatures.children.length > 0){ cityFeatures.remove(cityFeatures.children[0]); } 
+            bullets.length = 0; 
+            enemyBullets.length = 0; 
+            targets.length = 0; 
+            enemies.length = 0; 
+            bombers.length = 0;
+            bombs.length = 0;
+            activeEffects.length = 0; 
+            gameOverElement.style.display = 'none'; 
+            init(); 
+        }
+
+        function animate() { 
+    const deltaTime = Math.min(clock.getDelta(), 0.05); 
+    if (!isGameOver) { 
+        spawnEnemyTimer -= deltaTime; 
+        if (enemies.length < minEnemies && spawnEnemyTimer <= 0) { 
+            createEnemies(1); 
+            spawnEnemyTimer = spawnEnemyDelay; 
+        } 
+        
+        // Spawn bomber squadrons
+        bomberSpawnTimer -= deltaTime;
+        if (bomberSpawnTimer <= 0 && activeBomberSquadrons < 1) {
+            spawnBomberSquadron();
+            bomberSpawnTimer = bomberSpawnDelay + Math.random() * 10;
+        }
+        
+        updatePlayer(deltaTime); 
+        updateEnemies(deltaTime); 
+        updateBombers(deltaTime);
+        updateBombs(deltaTime);
+        updateTargets(deltaTime); 
+        updateBullets(deltaTime); 
+        updateEnemyBullets(deltaTime); 
+        updateAudio(deltaTime); 
+        updateUI(deltaTime);  // Pass deltaTime here
+        updateRadar(deltaTime); 
+    } else { 
+        updatePlayer(deltaTime); 
+        if(radarBlipsContainer) radarBlipsContainer.innerHTML = ''; 
+        if(radarPlayerArrow) radarPlayerArrow.style.transform = `translate(-50%, -100%) rotate(0deg)`; 
+        if(sunGlareOverlay) sunGlareOverlay.style.opacity = 0; 
+    } 
+    updateEffects(deltaTime); 
+    updateCamera(deltaTime); 
+    renderer.render(scene, camera); 
+    requestAnimationFrame(animate); 
+}
+        // --- Start ---
+        init();
+    </script>
+</body>
+</html>
