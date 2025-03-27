@@ -61,6 +61,8 @@
     }
     </script>
 
+    <!-- <script type="importmap"> { "imports": { "three": "https://unpkg.com/three@0.163.0/build/three.module.js" } } </script> -->
+
     <script type="module">
         import * as THREE from 'three';
 
@@ -142,58 +144,86 @@
         function pointToLineSegmentDistanceSq(px, pz, ax, az, bx, bz) { const l2 = (bx - ax) * (bx - ax) + (bz - az) * (bz - az); if (l2 === 0.0) return (px - ax) * (px - ax) + (pz - az) * (pz - az); let t = ((px - ax) * (bx - ax) + (pz - az) * (bz - az)) / l2; t = Math.max(0, Math.min(1, t)); const closestX = ax + t * (bx - ax); const closestZ = az + t * (bz - az); const dx = px - closestX; const dz = pz - closestZ; return dx * dx + dz * dz; }
 
         // --- Initialization ---
-        function init() {
-            isGameOver = false; score = 0; planeHealth = MAX_HEALTH; currentSpeedFactor = 1.0; currentCooldown = 0; 
-            cameraShakeIntensity = 0; currentShakeTime = 0; playerHitFlashTime = 0; currentPitchRate = 0; currentYawRate = 0; 
-            spawnEnemyTimer = 10.0; bomberSpawnTimer = 10.0; activeBomberSquadrons = 0;
-            bullets.length = 0; enemyBullets.length = 0; targets.length = 0; enemies.length = 0; bombers.length = 0; 
-            bombs.length = 0; activeEffects.length = 0; cityFeatures.clear();
-            if (instancedBuildings) scene?.remove(instancedBuildings); if (instancedBuildingsDark) scene?.remove(instancedBuildingsDark); 
-            if (instancedTreeTrunks) scene?.remove(instancedTreeTrunks); if (instancedTreeTops) scene?.remove(instancedTreeTops); 
-            instancedBuildings = instancedBuildingsDark = instancedTreeTrunks = instancedTreeTops = null;
+// --- Initialization ---
+function init() {
+    isGameOver = false; score = 0; planeHealth = MAX_HEALTH; currentSpeedFactor = 1.0; currentCooldown = 0;
+    cameraShakeIntensity = 0; currentShakeTime = 0; playerHitFlashTime = 0; currentPitchRate = 0; currentYawRate = 0;
+    spawnEnemyTimer = 10.0; bomberSpawnTimer = 10.0; activeBomberSquadrons = 0;
+    // Clear arrays
+    bullets.length = 0; enemyBullets.length = 0; targets.length = 0; enemies.length = 0; bombers.length = 0;
+    bombs.length = 0; activeEffects.length = 0; wingmen.length = 0; rockets.length = 0; // Clear wingmen and rockets
+    currentRocketCooldown = 0; // Reset rocket cooldown
+    cityFeatures.clear();
+    if (instancedBuildings) scene?.remove(instancedBuildings); if (instancedBuildingsDark) scene?.remove(instancedBuildingsDark);
+    if (instancedTreeTrunks) scene?.remove(instancedTreeTrunks); if (instancedTreeTops) scene?.remove(instancedTreeTops);
+    instancedBuildings = instancedBuildingsDark = instancedTreeTrunks = instancedTreeTops = null;
 
-            scene = new THREE.Scene(); clock = new THREE.Clock(); 
-            camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.01, 6000);
-            
-            // Initialize airplane object FIRST to set position/rotation
-            createAirplaneWW2_V2(); // Create the plane geometry/group
+    scene = new THREE.Scene(); clock = new THREE.Clock();
+    camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.01, 6000);
 
-            // Spawn Position & Rotation
-            const spawnOffset = worldRadius * 0.002;
-            const spawnY = 500;
-            airplane.position.set(-spawnOffset, spawnY, -spawnOffset);
-            airplane.lookAt(0, spawnY, 0);
+    // Initialize airplane object FIRST to set position/rotation
+    createAirplaneWW2_V2(); // Create the plane geometry/group
 
-            camera.position.set(airplane.position.x + 5, airplane.position.y + 8, airplane.position.z + 10);
-            originalCameraPos.copy(camera.position);
+    // Spawn Position & Rotation
+    const spawnOffset = worldRadius * 0.002;
+    const spawnY = 500;
+    airplane.position.set(-spawnOffset, spawnY, -spawnOffset);
+    airplane.lookAt(0, spawnY, 0);
 
-            renderer = new THREE.WebGLRenderer({ antialias: true, logarithmicDepthBuffer: true }); 
-            renderer.setSize(window.innerWidth, window.innerHeight); 
-            renderer.shadowMap.enabled = true; 
-            renderer.shadowMap.type = THREE.PCFSoftShadowMap; 
-            document.body.appendChild(renderer.domElement);
-            
-            setupLightingAndSun(); 
-            createGround(); 
-            createSky();
-            createInstancedGroundObjects(5000, 800);
-            createRivers(); 
-            createLandmarks(); 
-            createBridges(); 
-            scene.add(cityFeatures);
-            scene.add(airplane);
-            createTargets(50); 
-            createEnemies(minEnemies + 2); 
-            setupUIReferences(); 
-            gameOverElement.style.display = 'none'; 
-            hitOverlayElement.style.opacity = 0; 
-            sunGlareOverlay.style.opacity = 0;
-            bomberWarningElement.style.display = 'none';
-            startPromptElement.style.display = audioInitialized ? 'none' : 'block'; 
-            setupEventListeners(); 
-            animate();
-        }
+    camera.position.set(airplane.position.x + 5, airplane.position.y + 8, airplane.position.z + 10);
+    originalCameraPos.copy(camera.position);
 
+    renderer = new THREE.WebGLRenderer({ antialias: true, logarithmicDepthBuffer: true });
+    renderer.setSize(window.innerWidth, window.innerHeight);
+    renderer.shadowMap.enabled = true;
+    renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+    document.body.appendChild(renderer.domElement);
+
+    setupLightingAndSun();
+    createGround();
+    createSky();
+    createInstancedGroundObjects(5000, 800);
+    createRivers();
+    createLandmarks();
+    createBridges();
+    scene.add(cityFeatures);
+    scene.add(airplane);
+
+    // --- Create Wingmen ---
+    wingmen = []; // Clear just in case
+    for (let i = 0; i < wingmanOffsets.length; i++) {
+        const wingman = airplane.clone(); // Clone the player model
+        wingman.scale.setScalar(0.90); // Make them slightly smaller
+
+        // Calculate initial position relative to player's starting orientation
+        const initialOffset = wingmanOffsets[i].clone().applyQuaternion(airplane.quaternion);
+        wingman.position.copy(airplane.position).add(initialOffset);
+        wingman.quaternion.copy(airplane.quaternion); // Match initial orientation
+
+        // Add specific user data
+        wingman.userData = {
+            isWingman: true,
+            shootDelayTimer: 0,
+            cooldown: 0
+        };
+
+        scene.add(wingman);
+        wingmen.push(wingman);
+        console.log(`Created wingman ${i}`);
+    }
+    // --- End Create Wingmen ---
+
+    createTargets(50);
+    createEnemies(minEnemies + 2);
+    setupUIReferences();
+    gameOverElement.style.display = 'none';
+    hitOverlayElement.style.opacity = 0;
+    sunGlareOverlay.style.opacity = 0;
+    bomberWarningElement.style.display = 'none';
+    startPromptElement.style.display = audioInitialized ? 'none' : 'block';
+    setupEventListeners();
+    animate();
+}
         // --- setupLightingAndSun, createSunTexture ---
         function setupLightingAndSun() { 
             scene.add(new THREE.AmbientLight(0xeeeeff, 1.1)); 
@@ -515,288 +545,291 @@
         }
 
         // --- createAirplaneWW2_V2 (Spitfire Model) ---
-        function createAirplaneWW2_V2() {
-            airplane = new THREE.Group();
+// --- createAirplaneWW2_V2 (Spitfire Model) ---
+// Add .name to the propeller group
+function createAirplaneWW2_V2() {
+    airplane = new THREE.Group();
 
-            // Spitfire Colors (Approximate)
-            const colorUpperGreen = 0x4B533E; // Dark Green
-            const colorUpperGrey = 0x7B8489; // Ocean Grey
-            const colorLowerGrey = 0xA8B4B8; // Medium Sea Grey
-            const colorSpinner = 0x303030; // Dark grey/black
-            const colorPropeller = 0x202020;
-            const colorExhaust = 0x5A4F4A;
-            const colorCockpitFrame = 0x606060;
-            const colorGlass = 0xADD8E6; // Light blue for glass
+    // Spitfire Colors (Approximate)
+    const colorUpperGreen = 0x4B533E; // Dark Green
+    const colorUpperGrey = 0x7B8489; // Ocean Grey
+    const colorLowerGrey = 0xA8B4B8; // Medium Sea Grey
+    const colorSpinner = 0x303030; // Dark grey/black
+    const colorPropeller = 0x202020;
+    const colorExhaust = 0x5A4F4A;
+    const colorCockpitFrame = 0x606060;
+    const colorGlass = 0xADD8E6; // Light blue for glass
 
-            // Markings Colors
-            const colorRoundelBlue = 0x00247D; // RAF Blue
-            const colorRoundelWhite = 0xFFFFFF;
-            const colorRoundelRed = 0xCE1126; // RAF Red
-            const colorTailRed = 0xCE1126;
-            const colorTailWhite = 0xFFFFFF;
-            const colorTailBlue = 0x00247D;
-            const colorYellowLeading = 0xFFD700; // Gold/Yellow
-
-
-            // --- Materials ---
-            const fuselageMatUpper = new THREE.MeshStandardMaterial({ color: colorUpperGrey, roughness: 0.6, metalness: 0.2 });
-            const fuselageMatLower = new THREE.MeshStandardMaterial({ color: colorLowerGrey, roughness: 0.7, metalness: 0.1 });
-            // Wings might need separate top/bottom materials if we want camo split
-            const wingMatUpper = new THREE.MeshStandardMaterial({ color: colorUpperGrey, roughness: 0.6, metalness: 0.2 }); // Use grey for now, camo is complex
-            const wingMatLower = new THREE.MeshStandardMaterial({ color: colorLowerGrey, roughness: 0.7, metalness: 0.1 });
-            const cockpitFrameMat = new THREE.MeshStandardMaterial({ color: colorCockpitFrame, roughness: 0.5, metalness: 0.3 });
-            const glassMat = new THREE.MeshStandardMaterial({ color: colorGlass, roughness: 0.1, metalness: 0.1, transparent: true, opacity: 0.3 });
-            const propellerMat = new THREE.MeshStandardMaterial({ color: colorPropeller, roughness: 0.4, metalness: 0.5 });
-            const spinnerMat = new THREE.MeshStandardMaterial({ color: colorSpinner, roughness: 0.5, metalness: 0.4 });
-            const exhaustMat = new THREE.MeshStandardMaterial({ color: colorExhaust, roughness: 0.6, metalness: 0.4 });
-            const markingMat = new THREE.MeshBasicMaterial({ side: THREE.DoubleSide, depthWrite: false }); // Basic material for markings
-
-            // --- Fuselage (Multiple Cylinders Tapered) ---
-            const fuselageSegments = 20;
-            const fuselageLength = 7.0;
-             // Define radii at different points along length (z-axis, front is negative)
-             const radii = [
-                 { z: -3.5, r: 0.1 }, // Nose tip
-                 { z: -3.0, r: 0.4 }, // Start of main body
-                 { z: -1.0, r: 0.65}, // Widest point near cockpit/wing root
-                 { z: 1.5,  r: 0.5 }, // Tapering rear
-                 { z: 3.0,  r: 0.25}, // Tail base
-                 { z: 3.5,  r: 0.15}  // Very end
-             ];
-
-             for(let i = 0; i < radii.length - 1; i++) {
-                 const r1 = radii[i];
-                 const r2 = radii[i+1];
-                 const segmentLength = r2.z - r1.z;
-                 const avgRadius = (r1.r + r2.r) / 2;
-                 // Choose upper or lower material based on average height (simple split)
-                 const mat = avgRadius > 0.3 ? fuselageMatUpper : fuselageMatLower; // Simple split based on radius
-                 const segmentGeo = new THREE.CylinderGeometry(r1.r, r2.r, segmentLength, fuselageSegments);
-                 const segment = new THREE.Mesh(segmentGeo, fuselageMatUpper); // Use upper for now
-                 segment.rotation.x = Math.PI / 2;
-                 segment.position.z = r1.z + segmentLength / 2;
-                 segment.castShadow = true;
-                 airplane.add(segment);
-             }
+    // Markings Colors
+    const colorRoundelBlue = 0x00247D; // RAF Blue
+    const colorRoundelWhite = 0xFFFFFF;
+    const colorRoundelRed = 0xCE1126; // RAF Red
+    const colorTailRed = 0xCE1126;
+    const colorTailWhite = 0xFFFFFF;
+    const colorTailBlue = 0x00247D;
+    const colorYellowLeading = 0xFFD700; // Gold/Yellow
 
 
-            // --- Wings (Elliptical Shape with ExtrudeGeometry) ---
-             const wingSpan = 9.5;
-             const wingRootChord = 2.0;
-             const wingTipChord = 0.8;
-             const wingThickness = 0.2;
-             const wingDihedralAngle = Math.PI * 0.05; // Spitfire had noticeable dihedral
+    // --- Materials ---
+    const fuselageMatUpper = new THREE.MeshStandardMaterial({ color: colorUpperGrey, roughness: 0.6, metalness: 0.2 });
+    const fuselageMatLower = new THREE.MeshStandardMaterial({ color: colorLowerGrey, roughness: 0.7, metalness: 0.1 });
+    // Wings might need separate top/bottom materials if we want camo split
+    const wingMatUpper = new THREE.MeshStandardMaterial({ color: colorUpperGrey, roughness: 0.6, metalness: 0.2 }); // Use grey for now, camo is complex
+    const wingMatLower = new THREE.MeshStandardMaterial({ color: colorLowerGrey, roughness: 0.7, metalness: 0.1 });
+    const cockpitFrameMat = new THREE.MeshStandardMaterial({ color: colorCockpitFrame, roughness: 0.5, metalness: 0.3 });
+    const glassMat = new THREE.MeshStandardMaterial({ color: colorGlass, roughness: 0.1, metalness: 0.1, transparent: true, opacity: 0.3 });
+    const propellerMat = new THREE.MeshStandardMaterial({ color: colorPropeller, roughness: 0.4, metalness: 0.5 });
+    const spinnerMat = new THREE.MeshStandardMaterial({ color: colorSpinner, roughness: 0.5, metalness: 0.4 });
+    const exhaustMat = new THREE.MeshStandardMaterial({ color: colorExhaust, roughness: 0.6, metalness: 0.4 });
+    const markingMat = new THREE.MeshBasicMaterial({ side: THREE.DoubleSide, depthWrite: false }); // Basic material for markings
 
-             const wingShape = new THREE.Shape();
-             const halfSpan = wingSpan / 2;
-             // Start at root trailing edge
-             wingShape.moveTo(0, -wingRootChord / 2);
-             // Curve to tip trailing edge
-             wingShape.quadraticCurveTo(halfSpan * 0.6, -wingRootChord * 0.4, halfSpan, -wingTipChord / 2);
-             // Straight tip edge (approx)
-             wingShape.lineTo(halfSpan, wingTipChord / 2);
-             // Curve to root leading edge
-             wingShape.quadraticCurveTo(halfSpan * 0.5, wingRootChord * 0.35, 0, wingRootChord / 2);
-             // Close shape
-             wingShape.lineTo(0, -wingRootChord / 2);
+    // --- Fuselage (Multiple Cylinders Tapered) ---
+    const fuselageSegments = 20;
+    const fuselageLength = 7.0;
+     // Define radii at different points along length (z-axis, front is negative)
+     const radii = [
+         { z: -3.5, r: 0.1 }, // Nose tip
+         { z: -3.0, r: 0.4 }, // Start of main body
+         { z: -1.0, r: 0.65}, // Widest point near cockpit/wing root
+         { z: 1.5,  r: 0.5 }, // Tapering rear
+         { z: 3.0,  r: 0.25}, // Tail base
+         { z: 3.5,  r: 0.15}  // Very end
+     ];
 
-             const wingExtrudeSettings = { depth: wingThickness, bevelEnabled: false };
-             const wingGeometry = new THREE.ExtrudeGeometry(wingShape, wingExtrudeSettings);
-             wingGeometry.computeVertexNormals(); // Important for lighting
-
-             // Need to apply materials per face for top/bottom/sides - complex.
-             // Simplified: Use one material for now, apply decals later.
-             const rightWing = new THREE.Mesh(wingGeometry, wingMatUpper); // Use upper material
-             rightWing.rotateX(-Math.PI / 2); // Lay flat Z-up
-             rightWing.rotateY(-wingDihedralAngle); // Apply dihedral (roll up)
-             rightWing.position.y = -0.2; // Lower wing root slightly
-             rightWing.position.z = -1.0; // Position along fuselage
-             rightWing.castShadow = true;
-             airplane.add(rightWing);
-
-             // Clone and flip for left wing
-             const leftWing = rightWing.clone();
-             leftWing.rotation.y *= -1; // Flip dihedral
-             leftWing.scale.x = -1; // Flip geometry
-             airplane.add(leftWing);
-
-             // Yellow leading edge (thin box)
-             const leadingEdgeGeo = new THREE.BoxGeometry(wingSpan * 0.95, wingThickness * 1.1, 0.05); // Thin box
-             const leadingEdgeMat = new THREE.MeshBasicMaterial({color: colorYellowLeading});
-             const leadingEdge = new THREE.Mesh(leadingEdgeGeo, leadingEdgeMat);
-             leadingEdge.position.set(0, rightWing.position.y, rightWing.position.z + wingRootChord * 0.45); // Position slightly fwd
-             // Apply average dihedral? Or parent to wings? Simpler to just position for now
-             leadingEdge.rotation.y = wingDihedralAngle * 0.5; // Average dihedral approximation
-             //airplane.add(leadingEdge); // Add if desired
+     for(let i = 0; i < radii.length - 1; i++) {
+         const r1 = radii[i];
+         const r2 = radii[i+1];
+         const segmentLength = r2.z - r1.z;
+         const avgRadius = (r1.r + r2.r) / 2;
+         // Choose upper or lower material based on average height (simple split)
+         const mat = avgRadius > 0.3 ? fuselageMatUpper : fuselageMatLower; // Simple split based on radius
+         const segmentGeo = new THREE.CylinderGeometry(r1.r, r2.r, segmentLength, fuselageSegments);
+         const segment = new THREE.Mesh(segmentGeo, fuselageMatUpper); // Use upper for now
+         segment.rotation.x = Math.PI / 2;
+         segment.position.z = r1.z + segmentLength / 2;
+         segment.castShadow = true;
+         airplane.add(segment);
+     }
 
 
-            // --- Tail Stabilizers (Elliptical-like) ---
-             const tailPlaneSpan = 3.5;
-             const tailPlaneRootChord = 1.0;
-             const tailPlaneTipChord = 0.6;
-             const tailPlaneThickness = 0.1;
+    // --- Wings (Elliptical Shape with ExtrudeGeometry) ---
+     const wingSpan = 9.5;
+     const wingRootChord = 2.0;
+     const wingTipChord = 0.8;
+     const wingThickness = 0.2;
+     const wingDihedralAngle = Math.PI * 0.05; // Spitfire had noticeable dihedral
 
-             const tailShape = new THREE.Shape();
-             const tailHalfSpan = tailPlaneSpan / 2;
-             tailShape.moveTo(0, -tailPlaneRootChord / 2);
-             tailShape.quadraticCurveTo(tailHalfSpan * 0.7, -tailPlaneRootChord * 0.4, tailHalfSpan, -tailPlaneTipChord / 2);
-             tailShape.lineTo(tailHalfSpan, tailPlaneTipChord / 2);
-             tailShape.quadraticCurveTo(tailHalfSpan * 0.6, tailPlaneRootChord * 0.3, 0, tailPlaneRootChord / 2);
-             tailShape.lineTo(0, -tailPlaneRootChord / 2);
+     const wingShape = new THREE.Shape();
+     const halfSpan = wingSpan / 2;
+     // Start at root trailing edge
+     wingShape.moveTo(0, -wingRootChord / 2);
+     // Curve to tip trailing edge
+     wingShape.quadraticCurveTo(halfSpan * 0.6, -wingRootChord * 0.4, halfSpan, -wingTipChord / 2);
+     // Straight tip edge (approx)
+     wingShape.lineTo(halfSpan, wingTipChord / 2);
+     // Curve to root leading edge
+     wingShape.quadraticCurveTo(halfSpan * 0.5, wingRootChord * 0.35, 0, wingRootChord / 2);
+     // Close shape
+     wingShape.lineTo(0, -wingRootChord / 2);
 
-             const tailExtrudeSettings = { depth: tailPlaneThickness, bevelEnabled: false };
-             const tailPlaneGeometry = new THREE.ExtrudeGeometry(tailShape, tailExtrudeSettings);
-             tailPlaneGeometry.computeVertexNormals();
+     const wingExtrudeSettings = { depth: wingThickness, bevelEnabled: false };
+     const wingGeometry = new THREE.ExtrudeGeometry(wingShape, wingExtrudeSettings);
+     wingGeometry.computeVertexNormals(); // Important for lighting
 
-             const tailPlaneRight = new THREE.Mesh(tailPlaneGeometry, fuselageMatUpper); // Use fuselage color
-             tailPlaneRight.rotateX(-Math.PI/2);
-             tailPlaneRight.position.set(0, 0.1, fuselageLength * 0.4); // Position at rear top
-             tailPlaneRight.castShadow = true;
-             airplane.add(tailPlaneRight);
+     // Need to apply materials per face for top/bottom/sides - complex.
+     // Simplified: Use one material for now, apply decals later.
+     const rightWing = new THREE.Mesh(wingGeometry, wingMatUpper); // Use upper material
+     rightWing.rotateX(-Math.PI / 2); // Lay flat Z-up
+     rightWing.rotateY(-wingDihedralAngle); // Apply dihedral (roll up)
+     rightWing.position.y = -0.2; // Lower wing root slightly
+     rightWing.position.z = -1.0; // Position along fuselage
+     rightWing.castShadow = true;
+     airplane.add(rightWing);
 
-             const tailPlaneLeft = tailPlaneRight.clone();
-             tailPlaneLeft.scale.x = -1;
-             airplane.add(tailPlaneLeft);
+     // Clone and flip for left wing
+     const leftWing = rightWing.clone();
+     leftWing.rotation.y *= -1; // Flip dihedral
+     leftWing.scale.x = -1; // Flip geometry
+     airplane.add(leftWing);
 
-            // --- Vertical Stabilizer (Curved) ---
-             const finHeight = 1.8;
-             const finBaseChord = 1.5;
-             const finTipChord = 0.4;
-             const finThickness = 0.1;
-
-             const finShape = new THREE.Shape();
-             finShape.moveTo(0, 0); // Bottom rear corner
-             finShape.lineTo(-finBaseChord, 0); // Bottom front corner
-             finShape.quadraticCurveTo(-finBaseChord * 0.8, finHeight * 0.8, -finTipChord, finHeight); // Curved leading edge to top front
-             finShape.lineTo(0, finHeight); // Top rear corner
-             finShape.lineTo(0, 0); // Close
-
-             const finExtrudeSettings = { depth: finThickness, bevelEnabled: false };
-             const finGeometry = new THREE.ExtrudeGeometry(finShape, finExtrudeSettings);
-             finGeometry.computeVertexNormals();
-             const tailFin = new THREE.Mesh(finGeometry, fuselageMatUpper); // Fuselage color
-             tailFin.rotateY(-Math.PI / 2); // Stand up
-             tailFin.position.set(finThickness/2 + 0.02, 0.1, fuselageLength * 0.4 - finBaseChord ); // Position on top rear fuselage
-             tailFin.castShadow = true;
-             airplane.add(tailFin);
-
-            // --- Cockpit Canopy (Bubble style) ---
-             const canopyLength = 1.2;
-             const canopyWidth = 0.7;
-             const canopyHeight = 0.4;
-             // Base frame (thin box)
-             const canopyFrameGeo = new THREE.BoxGeometry(canopyWidth, 0.1, canopyLength);
-             const canopyFrame = new THREE.Mesh(canopyFrameGeo, colorCockpitFrame);
-             canopyFrame.position.set(0, 0.6, -1.0); // Position on top
-             airplane.add(canopyFrame);
-             // Bubble (Sphere segment)
-             const canopyGlassGeo = new THREE.SphereGeometry(canopyWidth * 0.7, 12, 8, 0, Math.PI * 2, 0, Math.PI/2);
-             const canopyGlass = new THREE.Mesh(canopyGlassGeo, glassMat);
-             canopyGlass.scale.z = canopyLength / (canopyWidth * 0.7 * 2); // Stretch sphere into oval
-             canopyGlass.rotation.x = -Math.PI / 2; // Orient top up
-             canopyGlass.position.set(0, 0.6 + 0.05, -1.0); // Place on frame
-             airplane.add(canopyGlass);
+     // Yellow leading edge (thin box)
+     const leadingEdgeGeo = new THREE.BoxGeometry(wingSpan * 0.95, wingThickness * 1.1, 0.05); // Thin box
+     const leadingEdgeMat = new THREE.MeshBasicMaterial({color: colorYellowLeading});
+     const leadingEdge = new THREE.Mesh(leadingEdgeGeo, leadingEdgeMat);
+     leadingEdge.position.set(0, rightWing.position.y, rightWing.position.z + wingRootChord * 0.45); // Position slightly fwd
+     // Apply average dihedral? Or parent to wings? Simpler to just position for now
+     leadingEdge.rotation.y = wingDihedralAngle * 0.5; // Average dihedral approximation
+     //airplane.add(leadingEdge); // Add if desired
 
 
-            // --- Propeller (4 blades) ---
-             propeller = new THREE.Group();
-             const spinnerRadius = 0.3; const spinnerLength = 0.7;
-             const spinnerGeometry = new THREE.ConeGeometry(spinnerRadius, spinnerLength, 16);
-             const spinner = new THREE.Mesh(spinnerGeometry, spinnerMat); spinner.rotation.x = Math.PI / 2; propeller.add(spinner);
-             const bladeLength = 1.8; const bladeWidth = 0.3; const bladeThickness = 0.04;
-             const bladeGeometry = new THREE.BoxGeometry(bladeWidth, bladeLength, bladeThickness);
-             const numBlades = 4; // **** CHANGED TO 4 ****
-             for (let i = 0; i < numBlades; i++) {
-                 const blade = new THREE.Mesh(bladeGeometry, propellerMat); blade.position.y = bladeLength * 0.4; // Offset base near center
-                 blade.castShadow = true; blade.rotation.z = Math.PI * 0.1; // Blade pitch
-                 const bladeGroup = new THREE.Group(); bladeGroup.rotation.z = (i / numBlades) * Math.PI * 2; bladeGroup.add(blade); propeller.add(bladeGroup);
-             }
-             propeller.position.z = -fuselageLength / 2 - spinnerLength * 0.4;
-             airplane.add(propeller);
+    // --- Tail Stabilizers (Elliptical-like) ---
+     const tailPlaneSpan = 3.5;
+     const tailPlaneRootChord = 1.0;
+     const tailPlaneTipChord = 0.6;
+     const tailPlaneThickness = 0.1;
+
+     const tailShape = new THREE.Shape();
+     const tailHalfSpan = tailPlaneSpan / 2;
+     tailShape.moveTo(0, -tailPlaneRootChord / 2);
+     tailShape.quadraticCurveTo(tailHalfSpan * 0.7, -tailPlaneRootChord * 0.4, tailHalfSpan, -tailPlaneTipChord / 2);
+     tailShape.lineTo(tailHalfSpan, tailPlaneTipChord / 2);
+     tailShape.quadraticCurveTo(tailHalfSpan * 0.6, tailPlaneRootChord * 0.3, 0, tailPlaneRootChord / 2);
+     tailShape.lineTo(0, -tailPlaneRootChord / 2);
+
+     const tailExtrudeSettings = { depth: tailPlaneThickness, bevelEnabled: false };
+     const tailPlaneGeometry = new THREE.ExtrudeGeometry(tailShape, tailExtrudeSettings);
+     tailPlaneGeometry.computeVertexNormals();
+
+     const tailPlaneRight = new THREE.Mesh(tailPlaneGeometry, fuselageMatUpper); // Use fuselage color
+     tailPlaneRight.rotateX(-Math.PI/2);
+     tailPlaneRight.position.set(0, 0.1, fuselageLength * 0.4); // Position at rear top
+     tailPlaneRight.castShadow = true;
+     airplane.add(tailPlaneRight);
+
+     const tailPlaneLeft = tailPlaneRight.clone();
+     tailPlaneLeft.scale.x = -1;
+     airplane.add(tailPlaneLeft);
+
+    // --- Vertical Stabilizer (Curved) ---
+     const finHeight = 1.8;
+     const finBaseChord = 1.5;
+     const finTipChord = 0.4;
+     const finThickness = 0.1;
+
+     const finShape = new THREE.Shape();
+     finShape.moveTo(0, 0); // Bottom rear corner
+     finShape.lineTo(-finBaseChord, 0); // Bottom front corner
+     finShape.quadraticCurveTo(-finBaseChord * 0.8, finHeight * 0.8, -finTipChord, finHeight); // Curved leading edge to top front
+     finShape.lineTo(0, finHeight); // Top rear corner
+     finShape.lineTo(0, 0); // Close
+
+     const finExtrudeSettings = { depth: finThickness, bevelEnabled: false };
+     const finGeometry = new THREE.ExtrudeGeometry(finShape, finExtrudeSettings);
+     finGeometry.computeVertexNormals();
+     const tailFin = new THREE.Mesh(finGeometry, fuselageMatUpper); // Fuselage color
+     tailFin.rotateY(-Math.PI / 2); // Stand up
+     tailFin.position.set(finThickness/2 + 0.02, 0.1, fuselageLength * 0.4 - finBaseChord ); // Position on top rear fuselage
+     tailFin.castShadow = true;
+     airplane.add(tailFin);
+
+    // --- Cockpit Canopy (Bubble style) ---
+     const canopyLength = 1.2;
+     const canopyWidth = 0.7;
+     const canopyHeight = 0.4;
+     // Base frame (thin box)
+     const canopyFrameGeo = new THREE.BoxGeometry(canopyWidth, 0.1, canopyLength);
+     const canopyFrame = new THREE.Mesh(canopyFrameGeo, colorCockpitFrame);
+     canopyFrame.position.set(0, 0.6, -1.0); // Position on top
+     airplane.add(canopyFrame);
+     // Bubble (Sphere segment)
+     const canopyGlassGeo = new THREE.SphereGeometry(canopyWidth * 0.7, 12, 8, 0, Math.PI * 2, 0, Math.PI/2);
+     const canopyGlass = new THREE.Mesh(canopyGlassGeo, glassMat);
+     canopyGlass.scale.z = canopyLength / (canopyWidth * 0.7 * 2); // Stretch sphere into oval
+     canopyGlass.rotation.x = -Math.PI / 2; // Orient top up
+     canopyGlass.position.set(0, 0.6 + 0.05, -1.0); // Place on frame
+     airplane.add(canopyGlass);
 
 
-            // --- Details: Exhausts ---
-             const exhaustGeo = new THREE.CylinderGeometry(0.08, 0.06, 0.5, 6);
-             for (let i = 0; i < 6; i++) { // 6 per side for Spitfire
-                 const exhaustL = new THREE.Mesh(exhaustGeo, exhaustMat); exhaustL.rotation.z = -Math.PI * 0.6; exhaustL.position.set(-0.55, 0.3, -2.5 + i * 0.25); airplane.add(exhaustL);
-                 const exhaustR = exhaustL.clone(); exhaustR.position.x *= -1; exhaustR.rotation.z *= -1; airplane.add(exhaustR);
-             }
+    // --- Propeller (4 blades) ---
+     propeller = new THREE.Group();
+     propeller.name = "propellerGroup"; // *** FIX: Assign name for reliable lookup ***
 
-             // --- Gun Flash Placeholder ---
-             const flashGeometry = new THREE.PlaneGeometry(0.6, 0.6); const flashMaterial = new THREE.MeshBasicMaterial({ color: 0xffff44, side: THREE.DoubleSide, transparent: true, opacity: 0, depthWrite: false, blending: THREE.AdditiveBlending }); gunFlash = new THREE.Mesh(flashGeometry, flashMaterial); gunFlash.position.z = -fuselageLength/2 - 0.5; gunFlash.rotation.x = Math.PI / 2; airplane.add(gunFlash);
-
-             // --- Markings ---
-             const roundelOffset = 0.02; // Slight offset from surface
-             const roundelRadiusOuter = 0.7;
-             const roundelRadiusMid = 0.4;
-             const roundelRadiusInner = 0.2;
-
-             const roundelBlueMat = markingMat.clone(); roundelBlueMat.color.setHex(colorRoundelBlue);
-             const roundelWhiteMat = markingMat.clone(); roundelWhiteMat.color.setHex(colorRoundelWhite);
-             const roundelRedMat = markingMat.clone(); roundelRedMat.color.setHex(colorRoundelRed);
-
-             // Wing Roundels (Top)
-             const wingRoundelPos = wingSpan * 0.25;
-             const wingRoundelBlueTop = new THREE.Mesh(new THREE.CircleGeometry(roundelRadiusOuter, 32), roundelBlueMat);
-             const wingRoundelWhiteTop = new THREE.Mesh(new THREE.CircleGeometry(roundelRadiusMid, 32), roundelWhiteMat);
-             const wingRoundelRedTop = new THREE.Mesh(new THREE.CircleGeometry(roundelRadiusInner, 32), roundelRedMat);
-             wingRoundelBlueTop.position.set(wingRoundelPos, wingThickness/2 + roundelOffset, 0); wingRoundelBlueTop.rotation.x = -Math.PI / 2;
-             wingRoundelWhiteTop.position.set(wingRoundelPos, wingThickness/2 + roundelOffset*2, 0); wingRoundelWhiteTop.rotation.x = -Math.PI / 2;
-             wingRoundelRedTop.position.set(wingRoundelPos, wingThickness/2 + roundelOffset*3, 0); wingRoundelRedTop.rotation.x = -Math.PI / 2;
-             rightWing.add(wingRoundelBlueTop); rightWing.add(wingRoundelWhiteTop); rightWing.add(wingRoundelRedTop);
-             // Clone for left wing (mirrored)
-             const wingRoundelBlueTopL = wingRoundelBlueTop.clone(); wingRoundelBlueTopL.position.x *= -1; leftWing.add(wingRoundelBlueTopL);
-             const wingRoundelWhiteTopL = wingRoundelWhiteTop.clone(); wingRoundelWhiteTopL.position.x *= -1; leftWing.add(wingRoundelWhiteTopL);
-             const wingRoundelRedTopL = wingRoundelRedTop.clone(); wingRoundelRedTopL.position.x *= -1; leftWing.add(wingRoundelRedTopL);
-
-              // Wing Roundels (Bottom - smaller white/red usually)
-              // ... similar process, adjust radii and position Y negative ...
-
-             // Fuselage Roundels
-             const fuseRoundelPosY = 0;
-             const fuseRoundelPosZ = 0.5;
-             const fuseRoundelBlueSide = new THREE.Mesh(new THREE.CircleGeometry(roundelRadiusOuter*0.8, 32), roundelBlueMat);
-             const fuseRoundelWhiteSide = new THREE.Mesh(new THREE.CircleGeometry(roundelRadiusMid*0.8, 32), roundelWhiteMat);
-             const fuseRoundelRedSide = new THREE.Mesh(new THREE.CircleGeometry(roundelRadiusInner*0.8, 32), roundelRedMat);
-             fuseRoundelBlueSide.position.set(radii[2].r + roundelOffset, fuseRoundelPosY, fuseRoundelPosZ); fuseRoundelBlueSide.rotation.y = Math.PI / 2;
-             fuseRoundelWhiteSide.position.set(radii[2].r + roundelOffset*2, fuseRoundelPosY, fuseRoundelPosZ); fuseRoundelWhiteSide.rotation.y = Math.PI / 2;
-             fuseRoundelRedSide.position.set(radii[2].r + roundelOffset*3, fuseRoundelPosY, fuseRoundelPosZ); fuseRoundelRedSide.rotation.y = Math.PI / 2;
-             airplane.add(fuseRoundelBlueSide); airplane.add(fuseRoundelWhiteSide); airplane.add(fuseRoundelRedSide);
-             // Clone for other side
-             const fuseRoundelBlueSideL = fuseRoundelBlueSide.clone(); fuseRoundelBlueSideL.position.x *= -1; fuseRoundelBlueSideL.rotation.y *= -1; airplane.add(fuseRoundelBlueSideL);
-             const fuseRoundelWhiteSideL = fuseRoundelWhiteSide.clone(); fuseRoundelWhiteSideL.position.x *= -1; fuseRoundelWhiteSideL.rotation.y *= -1; airplane.add(fuseRoundelWhiteSideL);
-             const fuseRoundelRedSideL = fuseRoundelRedSide.clone(); fuseRoundelRedSideL.position.x *= -1; fuseRoundelRedSideL.rotation.y *= -1; airplane.add(fuseRoundelRedSideL);
+     const spinnerRadius = 0.3; const spinnerLength = 0.7;
+     const spinnerGeometry = new THREE.ConeGeometry(spinnerRadius, spinnerLength, 16);
+     const spinner = new THREE.Mesh(spinnerGeometry, spinnerMat); spinner.rotation.x = Math.PI / 2; propeller.add(spinner);
+     const bladeLength = 1.8; const bladeWidth = 0.3; const bladeThickness = 0.04;
+     const bladeGeometry = new THREE.BoxGeometry(bladeWidth, bladeLength, bladeThickness);
+     const numBlades = 4; // **** CHANGED TO 4 ****
+     for (let i = 0; i < numBlades; i++) {
+         const blade = new THREE.Mesh(bladeGeometry, propellerMat); blade.position.y = bladeLength * 0.4; // Offset base near center
+         blade.castShadow = true; blade.rotation.z = Math.PI * 0.1; // Blade pitch
+         const bladeGroup = new THREE.Group(); bladeGroup.rotation.z = (i / numBlades) * Math.PI * 2; bladeGroup.add(blade); propeller.add(bladeGroup);
+     }
+     propeller.position.z = -fuselageLength / 2 - spinnerLength * 0.4;
+     airplane.add(propeller);
 
 
-             // Tail Flash
-             const tailFlashWidth = 0.3;
-             const tailFlashHeight = finHeight * 0.8;
-             const tailFlashPosZ = fuselageLength * 0.4 - finBaseChord * 0.8; // Position near front of fin base
+    // --- Details: Exhausts ---
+     const exhaustGeo = new THREE.CylinderGeometry(0.08, 0.06, 0.5, 6);
+     for (let i = 0; i < 6; i++) { // 6 per side for Spitfire
+         const exhaustL = new THREE.Mesh(exhaustGeo, exhaustMat); exhaustL.rotation.z = -Math.PI * 0.6; exhaustL.position.set(-0.55, 0.3, -2.5 + i * 0.25); airplane.add(exhaustL);
+         const exhaustR = exhaustL.clone(); exhaustR.position.x *= -1; exhaustR.rotation.z *= -1; airplane.add(exhaustR);
+     }
 
-             const tailRedMat = markingMat.clone(); tailRedMat.color.setHex(colorTailRed);
-             const tailWhiteMat = markingMat.clone(); tailWhiteMat.color.setHex(colorTailWhite);
-             const tailBlueMat = markingMat.clone(); tailBlueMat.color.setHex(colorTailBlue);
+     // --- Gun Flash Placeholder ---
+     const flashGeometry = new THREE.PlaneGeometry(0.6, 0.6); const flashMaterial = new THREE.MeshBasicMaterial({ color: 0xffff44, side: THREE.DoubleSide, transparent: true, opacity: 0, depthWrite: false, blending: THREE.AdditiveBlending }); gunFlash = new THREE.Mesh(flashGeometry, flashMaterial); gunFlash.position.z = -fuselageLength/2 - 0.5; gunFlash.rotation.x = Math.PI / 2; airplane.add(gunFlash);
 
-             const tailRed = new THREE.Mesh(new THREE.PlaneGeometry(tailFlashWidth, tailFlashHeight), tailRedMat);
-             const tailWhite = new THREE.Mesh(new THREE.PlaneGeometry(tailFlashWidth, tailFlashHeight), tailWhiteMat);
-             const tailBlue = new THREE.Mesh(new THREE.PlaneGeometry(tailFlashWidth, tailFlashHeight), tailBlueMat);
+     // --- Markings ---
+     const roundelOffset = 0.02; // Slight offset from surface
+     const roundelRadiusOuter = 0.7;
+     const roundelRadiusMid = 0.4;
+     const roundelRadiusInner = 0.2;
 
-             // Position stripes side-by-side on the fin
-             tailRed.position.set(finThickness/2 + roundelOffset, finHeight * 0.4, tailFlashPosZ); tailRed.rotation.y = -Math.PI / 2;
-             tailWhite.position.set(finThickness/2 + roundelOffset*2, finHeight * 0.4, tailFlashPosZ - tailFlashWidth); tailWhite.rotation.y = -Math.PI / 2;
-             tailBlue.position.set(finThickness/2 + roundelOffset*3, finHeight * 0.4, tailFlashPosZ - tailFlashWidth * 2); tailBlue.rotation.y = -Math.PI / 2;
+     const roundelBlueMat = markingMat.clone(); roundelBlueMat.color.setHex(colorRoundelBlue);
+     const roundelWhiteMat = markingMat.clone(); roundelWhiteMat.color.setHex(colorRoundelWhite);
+     const roundelRedMat = markingMat.clone(); roundelRedMat.color.setHex(colorRoundelRed);
 
-             tailFin.add(tailRed); tailFin.add(tailWhite); tailFin.add(tailBlue);
-             // Clone for other side
-             const tailRedL = tailRed.clone(); tailRedL.position.x *= -1; tailRedL.rotation.y *= -1; tailFin.add(tailRedL);
-             const tailWhiteL = tailWhite.clone(); tailWhiteL.position.x *= -1; tailWhiteL.position.y = tailWhite.position.y; tailWhiteL.position.z = tailWhite.position.z; tailWhiteL.rotation.y *= -1; tailFin.add(tailWhiteL);
-             const tailBlueL = tailBlue.clone(); tailBlueL.position.x *= -1; tailBlueL.position.y = tailBlue.position.y; tailBlueL.position.z = tailBlue.position.z; tailBlueL.rotation.y *= -1; tailFin.add(tailBlueL);
+     // Wing Roundels (Top)
+     const wingRoundelPos = wingSpan * 0.25;
+     const wingRoundelBlueTop = new THREE.Mesh(new THREE.CircleGeometry(roundelRadiusOuter, 32), roundelBlueMat);
+     const wingRoundelWhiteTop = new THREE.Mesh(new THREE.CircleGeometry(roundelRadiusMid, 32), roundelWhiteMat);
+     const wingRoundelRedTop = new THREE.Mesh(new THREE.CircleGeometry(roundelRadiusInner, 32), roundelRedMat);
+     wingRoundelBlueTop.position.set(wingRoundelPos, wingThickness/2 + roundelOffset, 0); wingRoundelBlueTop.rotation.x = -Math.PI / 2;
+     wingRoundelWhiteTop.position.set(wingRoundelPos, wingThickness/2 + roundelOffset*2, 0); wingRoundelWhiteTop.rotation.x = -Math.PI / 2;
+     wingRoundelRedTop.position.set(wingRoundelPos, wingThickness/2 + roundelOffset*3, 0); wingRoundelRedTop.rotation.x = -Math.PI / 2;
+     rightWing.add(wingRoundelBlueTop); rightWing.add(wingRoundelWhiteTop); rightWing.add(wingRoundelRedTop);
+     // Clone for left wing (mirrored)
+     const wingRoundelBlueTopL = wingRoundelBlueTop.clone(); wingRoundelBlueTopL.position.x *= -1; leftWing.add(wingRoundelBlueTopL);
+     const wingRoundelWhiteTopL = wingRoundelWhiteTop.clone(); wingRoundelWhiteTopL.position.x *= -1; leftWing.add(wingRoundelWhiteTopL);
+     const wingRoundelRedTopL = wingRoundelRedTop.clone(); wingRoundelRedTopL.position.x *= -1; leftWing.add(wingRoundelRedTopL);
+
+      // Wing Roundels (Bottom - smaller white/red usually)
+      // ... similar process, adjust radii and position Y negative ...
+
+     // Fuselage Roundels
+     const fuseRoundelPosY = 0;
+     const fuseRoundelPosZ = 0.5;
+     const fuseRoundelBlueSide = new THREE.Mesh(new THREE.CircleGeometry(roundelRadiusOuter*0.8, 32), roundelBlueMat);
+     const fuseRoundelWhiteSide = new THREE.Mesh(new THREE.CircleGeometry(roundelRadiusMid*0.8, 32), roundelWhiteMat);
+     const fuseRoundelRedSide = new THREE.Mesh(new THREE.CircleGeometry(roundelRadiusInner*0.8, 32), roundelRedMat);
+     fuseRoundelBlueSide.position.set(radii[2].r + roundelOffset, fuseRoundelPosY, fuseRoundelPosZ); fuseRoundelBlueSide.rotation.y = Math.PI / 2;
+     fuseRoundelWhiteSide.position.set(radii[2].r + roundelOffset*2, fuseRoundelPosY, fuseRoundelPosZ); fuseRoundelWhiteSide.rotation.y = Math.PI / 2;
+     fuseRoundelRedSide.position.set(radii[2].r + roundelOffset*3, fuseRoundelPosY, fuseRoundelPosZ); fuseRoundelRedSide.rotation.y = Math.PI / 2;
+     airplane.add(fuseRoundelBlueSide); airplane.add(fuseRoundelWhiteSide); airplane.add(fuseRoundelRedSide);
+     // Clone for other side
+     const fuseRoundelBlueSideL = fuseRoundelBlueSide.clone(); fuseRoundelBlueSideL.position.x *= -1; fuseRoundelBlueSideL.rotation.y *= -1; airplane.add(fuseRoundelBlueSideL);
+     const fuseRoundelWhiteSideL = fuseRoundelWhiteSide.clone(); fuseRoundelWhiteSideL.position.x *= -1; fuseRoundelWhiteSideL.rotation.y *= -1; airplane.add(fuseRoundelWhiteSideL);
+     const fuseRoundelRedSideL = fuseRoundelRedSide.clone(); fuseRoundelRedSideL.position.x *= -1; fuseRoundelRedSideL.rotation.y *= -1; airplane.add(fuseRoundelRedSideL);
 
 
-             // Final Airplane Settings (spawn set in init)
-             airplane.rotation.order = 'YXZ';
-        }
+     // Tail Flash
+     const tailFlashWidth = 0.3;
+     const tailFlashHeight = finHeight * 0.8;
+     const tailFlashPosZ = fuselageLength * 0.4 - finBaseChord * 0.8; // Position near front of fin base
 
+     const tailRedMat = markingMat.clone(); tailRedMat.color.setHex(colorTailRed);
+     const tailWhiteMat = markingMat.clone(); tailWhiteMat.color.setHex(colorTailWhite);
+     const tailBlueMat = markingMat.clone(); tailBlueMat.color.setHex(colorTailBlue);
+
+     const tailRed = new THREE.Mesh(new THREE.PlaneGeometry(tailFlashWidth, tailFlashHeight), tailRedMat);
+     const tailWhite = new THREE.Mesh(new THREE.PlaneGeometry(tailFlashWidth, tailFlashHeight), tailWhiteMat);
+     const tailBlue = new THREE.Mesh(new THREE.PlaneGeometry(tailFlashWidth, tailFlashHeight), tailBlueMat);
+
+     // Position stripes side-by-side on the fin
+     tailRed.position.set(finThickness/2 + roundelOffset, finHeight * 0.4, tailFlashPosZ); tailRed.rotation.y = -Math.PI / 2;
+     tailWhite.position.set(finThickness/2 + roundelOffset*2, finHeight * 0.4, tailFlashPosZ - tailFlashWidth); tailWhite.rotation.y = -Math.PI / 2;
+     tailBlue.position.set(finThickness/2 + roundelOffset*3, finHeight * 0.4, tailFlashPosZ - tailFlashWidth * 2); tailBlue.rotation.y = -Math.PI / 2;
+
+     tailFin.add(tailRed); tailFin.add(tailWhite); tailFin.add(tailBlue);
+     // Clone for other side
+     const tailRedL = tailRed.clone(); tailRedL.position.x *= -1; tailRedL.rotation.y *= -1; tailFin.add(tailRedL);
+     const tailWhiteL = tailWhite.clone(); tailWhiteL.position.x *= -1; tailWhiteL.position.y = tailWhite.position.y; tailWhiteL.position.z = tailWhite.position.z; tailWhiteL.rotation.y *= -1; tailFin.add(tailWhiteL);
+     const tailBlueL = tailBlue.clone(); tailBlueL.position.x *= -1; tailBlueL.position.y = tailBlue.position.y; tailBlueL.position.z = tailBlue.position.z; tailBlueL.rotation.y *= -1; tailFin.add(tailBlueL);
+
+
+     // Final Airplane Settings (spawn set in init)
+     airplane.rotation.order = 'YXZ';
+}
         // --- createTargets, createEnemies, createEnemyFighter ---
         function createTargets(count) { 
             const geo = new THREE.TorusGeometry(targetRadius, 0.7, 10, 40); 
@@ -836,6 +869,318 @@
             } 
         }
         
+        // --- Wingmen ---
+let wingmen = [];
+const wingmanOffsets = [
+    new THREE.Vector3(-7, -1, -5), // Left wingman relative offset
+    new THREE.Vector3( 7, -1, -5)  // Right wingman relative offset
+];
+const wingmanLerpFactor = 0.08; // How quickly wingmen follow player (lower = smoother/more delay)
+const wingmanShootDelay = 0.15; // Delay before wingmen copy player shooting
+const wingmanShootCooldown = 0.1; // Wingmen individual gun cooldown
+
+// --- Rockets ---
+const rockets = [];
+const rocketSpeed = 1000; // Faster than bullets
+const rocketLifetime = 6.0;
+const rocketCooldown = 2.5; // Cooldown in seconds for firing rockets
+let currentRocketCooldown = 0;
+const rocketCollisionRadius = 4.0; // Larger impact radius than bullets
+
+// --- Helper Function: Create Wingman Bullet ---
+// (Similar to createBullet, but originates from wingman)
+// --- Helper Function: Create Wingman Bullet ---
+// (Similar to createBullet, but originates from wingman)
+function createWingmanBullet(wingman) {
+    const geo = new THREE.SphereGeometry(0.15, 6, 6);
+    const mat = new THREE.MeshBasicMaterial({ color: 0xccf700 }); // Slightly different color
+
+    const bullet = new THREE.Mesh(geo, mat);
+
+    // *** FIX: Use wingman's current forward direction ***
+    const forward = _vector3.set(0, 0, -1).applyQuaternion(wingman.quaternion); // Get wingman's forward
+    const offset = 3.8;
+    const startPos = wingman.position.clone().addScaledVector(forward, offset); // Start relative to wingman
+    bullet.position.copy(startPos);
+
+    // *** FIX: Calculate velocity based purely on wingman's forward and bullet speed ***
+    // Adding wingman's base velocity can be complex and might contribute to issues if orientation lags.
+    // The muzzle velocity is the dominant factor.
+    const muzzleVel_mps = forward.clone().normalize().multiplyScalar(bulletSpeed / 3.6); // Use clone()
+
+    // Optionally add player's velocity as a base reference if needed, but start simple:
+    // const worldVel = currentPlaneVelocity.clone().add(muzzleVel_mps);
+    const worldVel = muzzleVel_mps; // Simplest approach - velocity relative to world based on firing direction
+
+    bullet.userData = { velocity: worldVel, lifetime: bulletLifetime * 0.9, isBullet: true };
+    scene.add(bullet);
+    bullets.push(bullet); // Add to the main bullet array
+
+    // Wingman gun flash (Skipping visual for simplicity as before)
+}
+// --- Helper Function: Fire Rocket ---
+function fireRocket() {
+    if (isGameOver) return;
+
+    const geo = new THREE.CylinderGeometry(0.25, 0.25, 1.8, 8); // Simple rocket shape
+    const mat = new THREE.MeshStandardMaterial({ color: 0xcccccc, roughness: 0.5, metalness: 0.6 });
+    const rocket = new THREE.Mesh(geo, mat);
+
+    // Trail effect (simple sprite)
+    const trailMat = new THREE.SpriteMaterial({
+        color: 0xffa500,
+        blending: THREE.AdditiveBlending,
+        transparent: true,
+        opacity: 0.7,
+        depthWrite: false
+    });
+    const trail = new THREE.Sprite(trailMat);
+    trail.scale.set(0.8, 2.5, 1);
+    trail.position.z = 1.1; // Position behind rocket body
+    rocket.add(trail); // Attach trail to rocket
+
+    const forward = _vector3.set(0, 0, -1).applyQuaternion(airplane.quaternion);
+    const offset = 4.5; // Start slightly further ahead
+    const startPos = airplane.position.clone().addScaledVector(forward, offset);
+    rocket.position.copy(startPos);
+    rocket.quaternion.copy(airplane.quaternion); // Align rocket with plane
+
+    const muzzleVel_mps = forward.normalize().multiplyScalar(rocketSpeed / 3.6);
+    // Rocket velocity = plane velocity + rocket's own thrust
+    const worldVel = currentPlaneVelocity.clone().add(muzzleVel_mps);
+
+    rocket.userData = {
+        velocity: worldVel,
+        lifetime: rocketLifetime,
+        isRocket: true,
+        trailSprite: trail // Keep reference to trail sprite
+     };
+    scene.add(rocket);
+    rockets.push(rocket);
+
+    playSound('rocket_fire'); // Need to add this sound type
+    currentRocketCooldown = rocketCooldown; // Start cooldown
+}
+
+// --- Helper Function: Fire Wingman Rocket ---
+function fireWingmanRocket(wingman) {
+    if (isGameOver || !wingman || !wingman.parent) return; // Extra safety checks
+
+    const geo = new THREE.CylinderGeometry(0.20, 0.20, 1.5, 8); // Slightly smaller rocket?
+    const mat = new THREE.MeshStandardMaterial({ color: 0xbbbbbb, roughness: 0.5, metalness: 0.6 });
+    const rocket = new THREE.Mesh(geo, mat);
+
+    // Trail effect (simple sprite)
+    const trailMat = new THREE.SpriteMaterial({
+        color: 0xffa500,
+        blending: THREE.AdditiveBlending,
+        transparent: true,
+        opacity: 0.6, // Slightly less opaque?
+        depthWrite: false
+    });
+    const trail = new THREE.Sprite(trailMat);
+    trail.scale.set(0.7, 2.0, 1);
+    trail.position.z = 1.0; // Position behind rocket body
+    rocket.add(trail); // Attach trail to rocket
+
+    // Use wingman's CURRENT orientation
+    const forward = _vector3.set(0, 0, -1).applyQuaternion(wingman.quaternion);
+    const offset = 4.0;
+    const startPos = wingman.position.clone().addScaledVector(forward, offset);
+    rocket.position.copy(startPos);
+    rocket.quaternion.copy(wingman.quaternion); // Align rocket with wingman
+
+    const muzzleVel_mps = forward.clone().normalize().multiplyScalar(rocketSpeed / 3.6); // Use clone
+
+    // Approximate wingman velocity (less critical for fast rockets)
+    // Using player's velocity is a decent approximation here
+    const worldVel = currentPlaneVelocity.clone().add(muzzleVel_mps);
+
+    rocket.userData = {
+        velocity: worldVel,
+        lifetime: rocketLifetime * 0.9, // Slightly shorter lifetime?
+        isRocket: true,
+        trailSprite: trail
+     };
+    scene.add(rocket);
+    rockets.push(rocket); // Add to the main rockets array
+
+    // Don't play sound for wingmen rockets to avoid clutter
+    // playSound('rocket_fire', null, 0.8);
+}
+
+// --- New Update Function: Wingmen ---
+// --- New Update Function: Wingmen ---
+function updateWingmen(deltaTime) {
+    if (isGameOver || !airplane) return;
+
+    // Check if player just fired a rocket in this frame (cooldown was just reset)
+    // Need to check against a small epsilon because of floating point comparisons
+    const playerJustFiredRocket = Math.abs(currentRocketCooldown - rocketCooldown) < deltaTime; // Check if cooldown equals max
+
+    wingmen.forEach((wingman, index) => {
+        if (!wingman.parent) return; // Check if wingman object still exists
+
+        // 1. Calculate Target Position & Rotation (based on player + offset)
+        const targetPosition = airplane.position.clone().add(wingmanOffsets[index].clone().applyQuaternion(airplane.quaternion));
+        const targetQuaternion = airplane.quaternion.clone(); // Wingmen mimic player orientation
+
+        // 2. Smoothly Interpolate Position & Rotation
+        // Increase lerp factor slightly for tighter rotation following if needed
+        wingman.position.lerp(targetPosition, wingmanLerpFactor * 1.5); // Slightly faster position follow
+        wingman.quaternion.slerp(targetQuaternion, wingmanLerpFactor * 2.0); // Faster rotation follow
+
+        // 3. Handle Shooting Delay (Machine Gun)
+        if (!wingman.userData) wingman.userData = {}; // Ensure userData exists
+        if (wingman.userData.shootDelayTimer > 0) {
+            wingman.userData.shootDelayTimer -= deltaTime;
+        }
+        // If player is shooting AND the wingman isn't already waiting to shoot, start the delay
+        if (isShooting && !wingman.userData.isWaitingToShoot) {
+             wingman.userData.shootDelayTimer = wingmanShootDelay;
+             wingman.userData.isWaitingToShoot = true; // Flag that delay has started
+        }
+        // If player stops shooting, cancel the wait
+        if (!isShooting) {
+            wingman.userData.isWaitingToShoot = false;
+            // Optional: Reset shootDelayTimer if player stops? Or let it finish? Let it finish for now.
+        }
+
+
+        // 4. Update Wingman Cooldown (Machine Gun)
+        if (wingman.userData.cooldown > 0) {
+            wingman.userData.cooldown -= deltaTime;
+        }
+
+        // 5. Fire Machine Gun if delay timer finished and cooldown ready
+        if (wingman.userData.shootDelayTimer > 0 && wingman.userData.shootDelayTimer <= deltaTime && wingman.userData.cooldown <= 0) {
+             // Check if the timer just crossed zero in this frame
+             createWingmanBullet(wingman);
+             wingman.userData.cooldown = wingmanShootCooldown; // Start wingman cooldown
+             wingman.userData.shootDelayTimer = 0; // Reset delay timer
+             wingman.userData.isWaitingToShoot = false; // Fired, no longer waiting
+        }
+
+        // --- ROCKET FIRING LOGIC ---
+        if (!wingman.userData.rocketDelayTimer) wingman.userData.rocketDelayTimer = 0; // Initialize if needed
+        if (wingman.userData.rocketDelayTimer > 0) {
+            wingman.userData.rocketDelayTimer -= deltaTime;
+        }
+
+        // If player just fired rocket and wingman isn't already waiting, start its delay
+        if (playerJustFiredRocket && !wingman.userData.isWaitingToFireRocket) {
+            wingman.userData.rocketDelayTimer = wingmanShootDelay * 1.5; // Slightly longer delay for rockets?
+            wingman.userData.isWaitingToFireRocket = true;
+        }
+
+        // Fire Rocket if delay timer finished
+        if (wingman.userData.rocketDelayTimer > 0 && wingman.userData.rocketDelayTimer <= deltaTime) {
+             fireWingmanRocket(wingman);
+             wingman.userData.rocketDelayTimer = 0; // Reset delay
+             wingman.userData.isWaitingToFireRocket = false; // Fired, no longer waiting
+        }
+        // --- END ROCKET FIRING LOGIC ---
+
+
+        // --- Propeller Rotation FIX ---
+        // Use getObjectByName which is more reliable after cloning
+        const wingmanPropeller = wingman.getObjectByName("propellerGroup"); // Name assigned in createAirplaneWW2_V2
+        if (wingmanPropeller) {
+            // Rotate propeller based on player's speed factor (wingmen mimic speed implicitly)
+            wingmanPropeller.rotation.z -= (currentSpeedFactor + 0.1) * deltaTime * 60;
+        }
+        // --- END Propeller Rotation FIX ---
+
+    });
+}
+
+// --- New Update Function: Rockets ---
+function updateRockets(deltaTime) {
+    for (let i = rockets.length - 1; i >= 0; i--) {
+        const rocket = rockets[i];
+        if (!rocket.parent) {
+            rockets.splice(i, 1);
+            continue;
+        }
+
+        // Update position
+        rocket.position.addScaledVector(rocket.userData.velocity, deltaTime);
+
+        // Update lifetime
+        rocket.userData.lifetime -= deltaTime;
+        let hit = false;
+
+        // Align rocket to velocity (optional, makes it look better)
+        if (rocket.userData.velocity.lengthSq() > 0.01) {
+            rocket.lookAt(rocket.position.clone().add(rocket.userData.velocity));
+        }
+         // Update trail opacity based on lifetime
+        if (rocket.userData.trailSprite) {
+            rocket.userData.trailSprite.material.opacity = Math.min(0.7, rocket.userData.lifetime * 0.5);
+        }
+
+
+        // Collision Check against Enemies
+        for (let j = enemies.length - 1; j >= 0; j--) {
+            const enemy = enemies[j];
+            if (!enemy.userData.hit && enemy.parent && rocket.position.distanceTo(enemy.position) < rocketCollisionRadius) {
+                console.log("Rocket hit enemy!");
+                createExplosion(enemy.position.clone(), 2.0); // Bigger explosion for rocket
+                enemy.userData.hit = true; // Mark as hit
+                scene.remove(enemy); // Remove from scene
+                score += enemyValue * 1.5; // Bonus points for rocket kill?
+                hit = true;
+                playSound('explosion', enemy.position, 1.5); // Louder explosion sound
+                break; // One rocket hits one enemy
+            }
+        }
+         if (hit) {
+            scene.remove(rocket);
+            rockets.splice(i, 1);
+            continue; // Move to next rocket
+        }
+
+        // Collision Check against Bombers
+        for (let j = bombers.length - 1; j >= 0; j--) {
+            const bomber = bombers[j];
+             // Use a larger radius check for bombers
+            if (!bomber.userData.hit && bomber.parent && rocket.position.distanceTo(bomber.position) < rocketCollisionRadius + 2.0) {
+                console.log("Rocket hit bomber!");
+                createExplosion(bomber.position.clone(), 2.5); // Even bigger explosion
+                bomber.userData.hit = true;
+                scene.remove(bomber);
+                score += bomberValue * 1.5;
+                hit = true;
+                playSound('explosion', bomber.position, 2.0);
+                break;
+            }
+        }
+
+        if (hit) {
+            scene.remove(rocket);
+            rockets.splice(i, 1);
+            continue;
+        }
+
+        // Remove if lifetime expired
+        if (rocket.userData.lifetime <= 0) {
+            scene.remove(rocket);
+            rockets.splice(i, 1);
+        }
+    }
+
+     // Cleanup enemies/bombers marked as hit (already done in updateBullets, but ensure consistency)
+     // It might be slightly cleaner to move the splice logic here after the check
+     for (let i = enemies.length - 1; i >= 0; i--) if (enemies[i].userData.hit && !enemies[i].parent) enemies.splice(i, 1);
+     for (let i = bombers.length - 1; i >= 0; i--) if (bombers[i].userData.hit && !bombers[i].parent) bombers.splice(i, 1);
+
+
+    // Update rocket cooldown timer
+    if (currentRocketCooldown > 0) {
+        currentRocketCooldown -= deltaTime;
+    }
+}
+
         function createEnemies(count) { 
             for (let i = 0; i < count; i++) { 
                 const enemy = createEnemyFighter(); 
@@ -1167,140 +1512,179 @@
         function initAudioOnInteraction() { if (!audioInitialized) initAudio(); if(startPromptElement) startPromptElement.style.display = 'none'; }
         function initAudio() { if (audioInitialized) return; try { audioContext = new (window.AudioContext || window.webkitAudioContext)(); if (audioContext.state === 'suspended') { audioContext.resume().then(() => { console.log("AudioContext resumed successfully."); setupAudioNodes(); }); } else { setupAudioNodes(); } } catch (e) { console.error("Web Audio API init failed", e); if(startPromptElement) startPromptElement.textContent = "[ Audio Failed ]"; } }
         function setupAudioNodes() { engineSound = audioContext.createOscillator(); engineGain = audioContext.createGain(); engineSound.type = 'sawtooth'; engineSound.frequency.setValueAtTime(70, audioContext.currentTime); engineGain.gain.setValueAtTime(0.0, audioContext.currentTime); engineSound.connect(engineGain); engineGain.connect(audioContext.destination); engineSound.start(); boostSoundGain = audioContext.createGain(); boostSoundGain.gain.setValueAtTime(0, audioContext.currentTime); boostSoundGain.connect(audioContext.destination); audioInitialized = true; console.log("Audio Initialized."); if (startPromptElement) startPromptElement.style.display = 'none'; }
-        function playSound(type, position = null, intensity = 1.0) { 
-            if (!audioInitialized || audioContext.state !== 'running') return; 
-            let oscType = 'triangle', startFreq = 600, endFreq = 100, startGain = 0.2 * intensity, duration = 0.15, noiseDuration = 0.2; 
-            switch (type) { 
-                case 'shoot': 
-                    oscType = 'triangle'; 
-                    startFreq = 900; 
-                    endFreq = 300; 
-                    startGain = 0.10 * intensity; 
-                    duration = 0.08; 
-                    break; 
-                case 'enemy_shoot': 
-                    oscType = 'square'; 
-                    startFreq = 700; 
-                    endFreq = 200; 
-                    startGain = 0.08 * intensity; 
-                    duration = 0.1; 
-                    break; 
-                case 'player_hit': 
-                    oscType = 'sawtooth'; 
-                    startFreq = 200; 
-                    endFreq = 50; 
-                    startGain = 0.4 * intensity; 
-                    duration = 0.12; 
-                    break; 
-                case 'impact': 
-                    oscType = 'square'; 
-                    startFreq = 400; 
-                    endFreq = 80; 
-                    startGain = 0.25 * intensity; 
-                    duration = 0.07; 
-                    break; 
-                case 'explosion': 
-                    noiseDuration = 0.45 * intensity; 
-                    startGain = 0.5 * intensity; 
-                    const bufSizeEx = Math.max(400, audioContext.sampleRate * noiseDuration); 
-                    const bufEx = audioContext.createBuffer(1, bufSizeEx, audioContext.sampleRate); 
-                    const outEx = bufEx.getChannelData(0); 
-                    let lastOutEx = 0; 
-                    for (let i = 0; i < bufSizeEx; i++) { 
-                        const w = Math.random() * 2 - 1; 
-                        outEx[i] = (lastOutEx + (0.12 * w)) / 1.12; 
-                        lastOutEx = outEx[i]; 
-                        outEx[i] *= 0.7; 
-                    } 
-                    const srcEx = audioContext.createBufferSource(); 
-                    srcEx.buffer = bufEx; 
-                    const gainEx = audioContext.createGain(); 
-                    gainEx.gain.setValueAtTime(startGain, audioContext.currentTime); 
-                    gainEx.gain.exponentialRampToValueAtTime(0.01, audioContext.currentTime + noiseDuration); 
-                    srcEx.connect(gainEx); 
-                    gainEx.connect(audioContext.destination); 
-                    srcEx.start(); 
-                    return; 
-                case 'crash': 
-                    noiseDuration = 0.6 * intensity; 
-                    startGain = 0.6 * intensity; 
-                    const bufSizeCr = Math.max(400, audioContext.sampleRate * noiseDuration); 
-                    const bufCr = audioContext.createBuffer(1, bufSizeCr, audioContext.sampleRate); 
-                    const outCr = bufCr.getChannelData(0); 
-                    let lastOutCr = 0; 
-                    for (let i = 0; i < bufSizeCr; i++) { 
-                        const w = Math.random() * 2 - 1; 
-                        outCr[i] = (lastOutCr + (0.25 * w)) / 1.25; 
-                        lastOutCr = outCr[i]; 
-                        outCr[i] *= 0.9; 
-                    } 
-                    const srcCr = audioContext.createBufferSource(); 
-                    srcCr.buffer = bufCr; 
-                    const gainCr = audioContext.createGain(); 
-                    gainCr.gain.setValueAtTime(startGain, audioContext.currentTime); 
-                    gainCr.gain.exponentialRampToValueAtTime(0.01, audioContext.currentTime + noiseDuration); 
-                    srcCr.connect(gainCr); 
-                    gainCr.connect(audioContext.destination); 
-                    srcCr.start(); 
-                    return; 
-                case 'boost_start': 
-                    if (!boostSoundGain) return; 
-                    const bufSizeB = audioContext.sampleRate * 0.3; 
-                    const bufB = audioContext.createBuffer(1, bufSizeB, audioContext.sampleRate); 
-                    const outB = bufB.getChannelData(0); 
-                    for (let i = 0; i < bufSizeB; i++) outB[i] = (Math.random() * 2 - 1) * 0.4; 
-                    const srcB = audioContext.createBufferSource(); 
-                    srcB.buffer = bufB; 
-                    boostSoundGain.gain.cancelScheduledValues(audioContext.currentTime); 
-                    boostSoundGain.gain.setValueAtTime(0, audioContext.currentTime); 
-                    boostSoundGain.gain.linearRampToValueAtTime(0.3 * intensity, audioContext.currentTime + 0.05); 
-                    boostSoundGain.gain.linearRampToValueAtTime(0, audioContext.currentTime + 0.3); 
-                    srcB.connect(boostSoundGain); 
-                    srcB.start(); 
-                    return; 
-                case 'bomb_drop':
-                    oscType = 'sine';
-                    startFreq = 150;
-                    endFreq = 50;
-                    startGain = 0.15 * intensity;
-                    duration = 0.3;
-                    break;
-                case 'bomb_explosion':
-                    noiseDuration = 0.6 * intensity;
-                    startGain = 0.7 * intensity;
-                    const bufSizeBomb = Math.max(400, audioContext.sampleRate * noiseDuration);
-                    const bufBomb = audioContext.createBuffer(1, bufSizeBomb, audioContext.sampleRate);
-                    const outBomb = bufBomb.getChannelData(0);
-                    let lastOutBomb = 0;
-                    for (let i = 0; i < bufSizeBomb; i++) {
-                        const w = Math.random() * 2 - 1;
-                        outBomb[i] = (lastOutBomb + (0.2 * w)) / 1.2;
-                        lastOutBomb = outBomb[i];
-                        outBomb[i] *= 0.8;
-                    }
-                    const srcBomb = audioContext.createBufferSource();
-                    srcBomb.buffer = bufBomb;
-                    const gainBomb = audioContext.createGain();
-                    gainBomb.gain.setValueAtTime(startGain, audioContext.currentTime);
-                    gainBomb.gain.exponentialRampToValueAtTime(0.01, audioContext.currentTime + noiseDuration);
-                    srcBomb.connect(gainBomb);
-                    gainBomb.connect(audioContext.destination);
-                    srcBomb.start();
-                    return;
-            } 
-            const osc = audioContext.createOscillator(); 
-            const gain = audioContext.createGain(); 
-            osc.type = oscType; 
-            osc.frequency.setValueAtTime(startFreq, audioContext.currentTime); 
-            osc.frequency.exponentialRampToValueAtTime(endFreq, audioContext.currentTime + duration * 0.8); 
-            gain.gain.setValueAtTime(startGain, audioContext.currentTime); 
-            gain.gain.exponentialRampToValueAtTime(0.001, audioContext.currentTime + duration); 
-            osc.connect(gain); 
-            gain.connect(audioContext.destination); 
-            osc.start(); 
-            osc.stop(audioContext.currentTime + duration + 0.05); 
-        }
+      // --- Audio --- (Added 'rocket_fire' case)
+function playSound(type, position = null, intensity = 1.0) {
+    if (!audioInitialized || audioContext.state !== 'running') return;
+    let oscType = 'triangle', startFreq = 600, endFreq = 100, startGain = 0.2 * intensity, duration = 0.15, noiseDuration = 0.2;
+    switch (type) {
+        case 'shoot':
+            oscType = 'triangle';
+            startFreq = 900;
+            endFreq = 300;
+            startGain = 0.10 * intensity;
+            duration = 0.08;
+            break;
+        case 'enemy_shoot':
+            oscType = 'square';
+            startFreq = 700;
+            endFreq = 200;
+            startGain = 0.08 * intensity;
+            duration = 0.1;
+            break;
+        case 'player_hit':
+            oscType = 'sawtooth';
+            startFreq = 200;
+            endFreq = 50;
+            startGain = 0.4 * intensity;
+            duration = 0.12;
+            break;
+        case 'impact':
+            oscType = 'square';
+            startFreq = 400;
+            endFreq = 80;
+            startGain = 0.25 * intensity;
+            duration = 0.07;
+            break;
+        case 'explosion':
+            noiseDuration = 0.45 * intensity;
+            startGain = 0.5 * intensity;
+            const bufSizeEx = Math.max(400, audioContext.sampleRate * noiseDuration);
+            const bufEx = audioContext.createBuffer(1, bufSizeEx, audioContext.sampleRate);
+            const outEx = bufEx.getChannelData(0);
+            let lastOutEx = 0;
+            for (let i = 0; i < bufSizeEx; i++) {
+                const w = Math.random() * 2 - 1;
+                outEx[i] = (lastOutEx + (0.12 * w)) / 1.12;
+                lastOutEx = outEx[i];
+                outEx[i] *= 0.7;
+            }
+            const srcEx = audioContext.createBufferSource();
+            srcEx.buffer = bufEx;
+            const gainEx = audioContext.createGain();
+            gainEx.gain.setValueAtTime(startGain, audioContext.currentTime);
+            gainEx.gain.exponentialRampToValueAtTime(0.01, audioContext.currentTime + noiseDuration);
+            srcEx.connect(gainEx);
+            gainEx.connect(audioContext.destination);
+            srcEx.start();
+            return;
+        case 'crash':
+            noiseDuration = 0.6 * intensity;
+            startGain = 0.6 * intensity;
+            const bufSizeCr = Math.max(400, audioContext.sampleRate * noiseDuration);
+            const bufCr = audioContext.createBuffer(1, bufSizeCr, audioContext.sampleRate);
+            const outCr = bufCr.getChannelData(0);
+            let lastOutCr = 0;
+            for (let i = 0; i < bufSizeCr; i++) {
+                const w = Math.random() * 2 - 1;
+                outCr[i] = (lastOutCr + (0.25 * w)) / 1.25;
+                lastOutCr = outCr[i];
+                outCr[i] *= 0.9;
+            }
+            const srcCr = audioContext.createBufferSource();
+            srcCr.buffer = bufCr;
+            const gainCr = audioContext.createGain();
+            gainCr.gain.setValueAtTime(startGain, audioContext.currentTime);
+            gainCr.gain.exponentialRampToValueAtTime(0.01, audioContext.currentTime + noiseDuration);
+            srcCr.connect(gainCr);
+            gainCr.connect(audioContext.destination);
+            srcCr.start();
+            return;
+        case 'boost_start':
+            if (!boostSoundGain) return;
+            const bufSizeB = audioContext.sampleRate * 0.3;
+            const bufB = audioContext.createBuffer(1, bufSizeB, audioContext.sampleRate);
+            const outB = bufB.getChannelData(0);
+            for (let i = 0; i < bufSizeB; i++) outB[i] = (Math.random() * 2 - 1) * 0.4;
+            const srcB = audioContext.createBufferSource();
+            srcB.buffer = bufB;
+            boostSoundGain.gain.cancelScheduledValues(audioContext.currentTime);
+            boostSoundGain.gain.setValueAtTime(0, audioContext.currentTime);
+            boostSoundGain.gain.linearRampToValueAtTime(0.3 * intensity, audioContext.currentTime + 0.05);
+            boostSoundGain.gain.linearRampToValueAtTime(0, audioContext.currentTime + 0.3);
+            srcB.connect(boostSoundGain);
+            srcB.start();
+            return;
+        case 'bomb_drop':
+            oscType = 'sine';
+            startFreq = 150;
+            endFreq = 50;
+            startGain = 0.15 * intensity;
+            duration = 0.3;
+            break;
+        case 'bomb_explosion':
+            noiseDuration = 0.6 * intensity;
+            startGain = 0.7 * intensity;
+            const bufSizeBomb = Math.max(400, audioContext.sampleRate * noiseDuration);
+            const bufBomb = audioContext.createBuffer(1, bufSizeBomb, audioContext.sampleRate);
+            const outBomb = bufBomb.getChannelData(0);
+            let lastOutBomb = 0;
+            for (let i = 0; i < bufSizeBomb; i++) {
+                const w = Math.random() * 2 - 1;
+                outBomb[i] = (lastOutBomb + (0.2 * w)) / 1.2;
+                lastOutBomb = outBomb[i];
+                outBomb[i] *= 0.8;
+            }
+            const srcBomb = audioContext.createBufferSource();
+            srcBomb.buffer = bufBomb;
+            const gainBomb = audioContext.createGain();
+            gainBomb.gain.setValueAtTime(startGain, audioContext.currentTime);
+            gainBomb.gain.exponentialRampToValueAtTime(0.01, audioContext.currentTime + noiseDuration);
+            srcBomb.connect(gainBomb);
+            gainBomb.connect(audioContext.destination);
+            srcBomb.start();
+            return;
+        // --- Added Rocket Fire Sound ---
+        case 'rocket_fire':
+             // Combination of noise and pitch drop
+             noiseDuration = 0.4 * intensity;
+             startGain = 0.35 * intensity;
+             const bufSizeRocket = audioContext.sampleRate * noiseDuration;
+             const bufRocket = audioContext.createBuffer(1, bufSizeRocket, audioContext.sampleRate);
+             const outRocket = bufRocket.getChannelData(0);
+             let lastOutRocket = 0;
+             for (let i = 0; i < bufSizeRocket; i++) {
+                 const w = Math.random() * 2 - 1;
+                 outRocket[i] = (lastOutRocket + (0.3 * w)) / 1.3; // More aggressive noise
+                 lastOutRocket = outRocket[i];
+                 outRocket[i] *= 1.0 - (i / bufSizeRocket); // Fade out noise
+             }
+             const noiseSrc = audioContext.createBufferSource();
+             noiseSrc.buffer = bufRocket;
+             const noiseGain = audioContext.createGain();
+             noiseGain.gain.setValueAtTime(startGain, audioContext.currentTime);
+             noiseGain.gain.linearRampToValueAtTime(0.01, audioContext.currentTime + noiseDuration);
 
+             const toneOsc = audioContext.createOscillator();
+             const toneGain = audioContext.createGain();
+             toneOsc.type = 'sawtooth';
+             toneOsc.frequency.setValueAtTime(250, audioContext.currentTime); // Starting pitch
+             toneOsc.frequency.exponentialRampToValueAtTime(80, audioContext.currentTime + noiseDuration * 0.8); // Drop pitch
+             toneGain.gain.setValueAtTime(startGain * 0.5, audioContext.currentTime); // Tone quieter than noise
+             toneGain.gain.exponentialRampToValueAtTime(0.01, audioContext.currentTime + noiseDuration);
+
+             noiseSrc.connect(noiseGain);
+             toneOsc.connect(toneGain);
+             noiseGain.connect(audioContext.destination);
+             toneGain.connect(audioContext.destination);
+             noiseSrc.start();
+             toneOsc.start();
+             toneOsc.stop(audioContext.currentTime + noiseDuration + 0.05);
+             return; // Return because this sound is composite
+
+    }
+    // Default sound generation (for non-composite sounds)
+    const osc = audioContext.createOscillator();
+    const gain = audioContext.createGain();
+    osc.type = oscType;
+    osc.frequency.setValueAtTime(startFreq, audioContext.currentTime);
+    osc.frequency.exponentialRampToValueAtTime(endFreq, audioContext.currentTime + duration * 0.8);
+    gain.gain.setValueAtTime(startGain, audioContext.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.001, audioContext.currentTime + duration);
+    osc.connect(gain);
+    gain.connect(audioContext.destination);
+    osc.start();
+    osc.stop(audioContext.currentTime + duration + 0.05);
+}
         // --- Effects ---
         function createBullet() { 
             if (isGameOver) return; 
@@ -1438,13 +1822,20 @@
             if (event.button === 0) isShooting = false; 
         }
         
-        function handleKeyDown(event) { 
-            if (isGameOver) return; 
-            if (!keyStates[event.code]) { 
-                if(event.code === 'ArrowUp' || event.code === 'ArrowDown') playSound('boost_start'); 
-            }; 
-            keyStates[event.code] = true; 
-        }
+// --- Event Listeners --- (Only handleKeyDown is changed)
+function handleKeyDown(event) {
+    if (isGameOver) return;
+    if (!keyStates[event.code]) {
+        if(event.code === 'ArrowUp' || event.code === 'ArrowDown') playSound('boost_start');
+    };
+    keyStates[event.code] = true;
+
+    // --- Rocket Firing ---
+    if (event.code === 'Space' && currentRocketCooldown <= 0 && !isGameOver) {
+        fireRocket();
+    }
+    // --- End Rocket Firing ---
+}
         
         function handleKeyUp(event) { 
             keyStates[event.code] = false; 
@@ -1840,59 +2231,104 @@
             }); 
         }
         
-        function updateBullets(deltaTime) { 
-            for (let i = bullets.length - 1; i >= 0; i--) { 
-                const bullet = bullets[i]; 
-                if (!bullet.parent) { 
-                    bullets.splice(i, 1); 
-                    continue; 
-                } 
-                bullet.position.addScaledVector(bullet.userData.velocity, deltaTime); 
-                bullet.userData.lifetime -= deltaTime; 
-                let hit = false; 
-                for (let j = targets.length - 1; j >= 0; j--) { 
-                    const target = targets[j]; 
-                    if (!target.userData.hit && target.parent && bullet.position.distanceTo(target.position) < targetRadius + 0.8) { 
-                        playSound('impact', target.position); 
-                        createExplosion(target.position.clone(), 1.0); 
-                        target.userData.hit = true; 
-                        scene.remove(target); 
-                        score += targetValue; 
-                        hit = true; 
-                        break; 
-                    } 
-                } 
-                if(hit) { 
-                    scene.remove(bullet); 
-                    bullets.splice(i, 1); 
-                    continue; 
-                } 
-                for (let j = enemies.length - 1; j >= 0; j--) { 
-                    const enemy = enemies[j]; 
-                    if (!enemy.userData.hit && enemy.parent && bullet.position.distanceTo(enemy.position) < 3.0) { 
-                        playSound('impact', enemy.position, 0.9); 
-                        enemy.userData.health -= 15; 
-                        if (enemy.userData.health <= 0) { 
-                            createExplosion(enemy.position.clone(), 1.2); 
-                            enemy.userData.hit = true; 
-                            scene.remove(enemy); 
-                            score += enemyValue; 
-                        } else { 
-                            /* Hit */ 
-                        } 
-                        hit = true; 
-                        break; 
-                    } 
-                } 
-                if (bullet.userData.lifetime <= 0 || hit) { 
-                    scene.remove(bullet); 
-                    bullets.splice(i, 1); 
-                } 
-            } 
-            for (let i = targets.length - 1; i >= 0; i--) if (targets[i].userData.hit) targets.splice(i, 1); 
-            for (let i = enemies.length - 1; i >= 0; i--) if (enemies[i].userData.hit) enemies.splice(i, 1); 
+// --- Game Logic Updates --- (Only updateBullets is slightly changed, to not double-remove hit enemies)
+function updateBullets(deltaTime) {
+    for (let i = bullets.length - 1; i >= 0; i--) {
+        const bullet = bullets[i];
+        if (!bullet.parent) {
+            bullets.splice(i, 1);
+            continue;
         }
-        
+        bullet.position.addScaledVector(bullet.userData.velocity, deltaTime);
+        bullet.userData.lifetime -= deltaTime;
+        let hit = false;
+
+        // Check Target Hits
+        for (let j = targets.length - 1; j >= 0; j--) {
+            const target = targets[j];
+            if (!target.userData.hit && target.parent && bullet.position.distanceTo(target.position) < targetRadius + 0.8) {
+                playSound('impact', target.position);
+                createExplosion(target.position.clone(), 1.0);
+                target.userData.hit = true;
+                scene.remove(target); // Remove target from scene
+                score += targetValue;
+                hit = true;
+                break; // Bullet hits one target
+            }
+        }
+        if(hit) {
+            scene.remove(bullet);
+            bullets.splice(i, 1);
+            continue; // Next bullet
+        }
+
+        // Check Enemy Hits (Fighters)
+        for (let j = enemies.length - 1; j >= 0; j--) {
+            const enemy = enemies[j];
+            // Added check !enemy.userData.hit -- ensure we don't hit already destroyed enemy
+            if (!enemy.userData.hit && enemy.parent && bullet.position.distanceTo(enemy.position) < 3.0) {
+                playSound('impact', enemy.position, 0.9);
+                enemy.userData.health -= 15;
+                if (enemy.userData.health <= 0) {
+                     // Don't create explosion/remove here if rockets handle it, just mark hit
+                     // createExplosion(enemy.position.clone(), 1.2); // Let rocket handle explosion if it hits
+                    enemy.userData.hit = true;
+                    // scene.remove(enemy); // Let rocket logic or later cleanup handle removal
+                    score += enemyValue; // Score for bullet kill assist/finish
+                    // If rocket already hit, score might be added twice - adjust scoring if needed
+                } else {
+                    // Non-fatal hit effect? (e.g., smoke) - not requested
+                }
+                hit = true;
+                break; // Bullet hits one enemy
+            }
+        }
+         if(hit) {
+            scene.remove(bullet);
+            bullets.splice(i, 1);
+            continue; // Next bullet
+        }
+
+         // Check Bomber Hits (Added this check)
+        for (let j = bombers.length - 1; j >= 0; j--) {
+            const bomber = bombers[j];
+             // Use a slightly larger check radius for bombers
+             // Added check !bomber.userData.hit
+            if (!bomber.userData.hit && bomber.parent && bullet.position.distanceTo(bomber.position) < 4.0) {
+                playSound('impact', bomber.position, 0.9);
+                bomber.userData.health -= 10; // Bombers tougher
+                if (bomber.userData.health <= 0) {
+                    bomber.userData.hit = true;
+                    // scene.remove(bomber); // Let rocket/cleanup handle removal
+                    score += bomberValue;
+                } else {
+                   bomber.userData.radarVisibleTimer = radarBlipDuration; // Make it visible on hit
+                }
+                hit = true;
+                break; // Bullet hits one bomber
+            }
+        }
+
+        // Cleanup bullet if lifetime expires or hit occurred
+        if (bullet.userData.lifetime <= 0 || hit) {
+            scene.remove(bullet);
+            bullets.splice(i, 1);
+        }
+    }
+
+    // Cleanup targets/enemies marked as hit (moved this part for clarity)
+    // This ensures things removed by rockets are also cleaned from arrays if needed
+    for (let i = targets.length - 1; i >= 0; i--) {
+        if (targets[i].userData.hit && !targets[i].parent) targets.splice(i, 1);
+    }
+    for (let i = enemies.length - 1; i >= 0; i--) {
+         // Remove if marked as hit AND not in scene (confirming removal)
+        if (enemies[i].userData.hit && !enemies[i].parent) enemies.splice(i, 1);
+    }
+     for (let i = bombers.length - 1; i >= 0; i--) {
+        if (bombers[i].userData.hit && !bombers[i].parent) bombers.splice(i, 1);
+    }
+}
         function updateEnemyBullets(deltaTime) { 
             if (isGameOver || !airplane) return; 
             const playerCollisionRadius = 3.5; 
@@ -2160,80 +2596,105 @@
             playSound('crash', null, 1.8); 
         }
         
-        function restartGame() { 
-            console.log("Restarting game..."); 
-            removeEventListeners(); 
-            const disposeObject = (obj) => { 
-                if (obj.geometry) obj.geometry.dispose(); 
-                if (obj.material) { 
-                    if (Array.isArray(obj.material)) { 
-                        obj.material.forEach(m => { 
-                            if(m.map) m.map.dispose(); 
-                            m.dispose(); 
-                        }); 
-                    } else { 
-                        if(obj.material.map) obj.material.map.dispose(); 
-                        obj.material.dispose(); 
-                    } 
-                } 
-            }; 
-            scene.traverse(disposeObject); 
-            cityFeatures.traverse(disposeObject); 
-            if(instancedBuildings) { instancedBuildings.geometry.dispose(); instancedBuildings.material.dispose(); } 
-            if(instancedBuildingsDark) { instancedBuildingsDark.geometry.dispose(); instancedBuildingsDark.material.dispose(); } 
-            if(instancedTreeTrunks) { instancedTreeTrunks.geometry.dispose(); instancedTreeTrunks.material.dispose(); } 
-            if(instancedTreeTops) { instancedTreeTops.geometry.dispose(); instancedTreeTops.material.dispose(); } 
-            while(scene.children.length > 0){ scene.remove(scene.children[0]); } 
-            while(cityFeatures.children.length > 0){ cityFeatures.remove(cityFeatures.children[0]); } 
-            bullets.length = 0; 
-            enemyBullets.length = 0; 
-            targets.length = 0; 
-            enemies.length = 0; 
-            bombers.length = 0;
-            bombs.length = 0;
-            activeEffects.length = 0; 
-            gameOverElement.style.display = 'none'; 
-            init(); 
+// --- endGame, restartGame --- (Added cleanup for wingmen/rockets)
+function restartGame() {
+    console.log("Restarting game...");
+    removeEventListeners();
+    const disposeObject = (obj) => {
+        if (obj.geometry) obj.geometry.dispose();
+        if (obj.material) {
+            // Dispose textures and materials properly
+             const materials = Array.isArray(obj.material) ? obj.material : [obj.material];
+             materials.forEach(m => {
+                if (m) {
+                    if (m.map) m.map.dispose();
+                    if (m.lightMap) m.lightMap.dispose();
+                    if (m.bumpMap) m.bumpMap.dispose();
+                    if (m.normalMap) m.normalMap.dispose();
+                    if (m.specularMap) m.specularMap.dispose();
+                    if (m.envMap) m.envMap.dispose();
+                    m.dispose();
+                }
+            });
         }
+         // Dispose sprite materials
+        if (obj.isSprite && obj.material) {
+             if (obj.material.map) obj.material.map.dispose();
+             obj.material.dispose();
+        }
+    };
+    scene.traverse(disposeObject);
+    cityFeatures.traverse(disposeObject);
+    if(instancedBuildings) { instancedBuildings.geometry.dispose(); instancedBuildings.material.dispose(); }
+    if(instancedBuildingsDark) { instancedBuildingsDark.geometry.dispose(); instancedBuildingsDark.material.dispose(); }
+    if(instancedTreeTrunks) { instancedTreeTrunks.geometry.dispose(); instancedTreeTrunks.material.dispose(); }
+    if(instancedTreeTops) { instancedTreeTops.geometry.dispose(); instancedTreeTops.material.dispose(); }
 
-        function animate() { 
-    const deltaTime = Math.min(clock.getDelta(), 0.05); 
-    if (!isGameOver) { 
-        spawnEnemyTimer -= deltaTime; 
-        if (enemies.length < minEnemies && spawnEnemyTimer <= 0) { 
-            createEnemies(1); 
-            spawnEnemyTimer = spawnEnemyDelay; 
-        } 
-        
-        // Spawn bomber squadrons
+    // Remove all direct children from scene
+    while(scene.children.length > 0){ scene.remove(scene.children[0]); }
+    // Remove children from cityFeatures group too
+    while(cityFeatures.children.length > 0){ cityFeatures.remove(cityFeatures.children[0]); }
+
+    // Clear game object arrays
+    bullets.length = 0;
+    enemyBullets.length = 0;
+    targets.length = 0;
+    enemies.length = 0;
+    bombers.length = 0;
+    bombs.length = 0;
+    activeEffects.length = 0;
+    wingmen.length = 0; // Clear wingmen array
+    rockets.length = 0; // Clear rockets array
+
+    gameOverElement.style.display = 'none';
+    init(); // Re-initialize the game
+}
+       // --- Animate Loop --- (Added calls to new update functions)
+function animate() {
+    const deltaTime = Math.min(clock.getDelta(), 0.05);
+    if (!isGameOver) {
+        // Spawning logic
+        spawnEnemyTimer -= deltaTime;
+        if (enemies.length < minEnemies && spawnEnemyTimer <= 0) {
+            createEnemies(1);
+            spawnEnemyTimer = spawnEnemyDelay;
+        }
         bomberSpawnTimer -= deltaTime;
         if (bomberSpawnTimer <= 0 && activeBomberSquadrons < 1) {
             spawnBomberSquadron();
             bomberSpawnTimer = bomberSpawnDelay + Math.random() * 10;
         }
-        
-        updatePlayer(deltaTime); 
-        updateEnemies(deltaTime); 
+
+        // Update game objects
+        updatePlayer(deltaTime);
+        updateWingmen(deltaTime); // Update wingmen positions and actions
+        updateEnemies(deltaTime);
         updateBombers(deltaTime);
         updateBombs(deltaTime);
-        updateTargets(deltaTime); 
-        updateBullets(deltaTime); 
-        updateEnemyBullets(deltaTime); 
-        updateAudio(deltaTime); 
-        updateUI(deltaTime);  // Pass deltaTime here
-        updateRadar(deltaTime); 
-    } else { 
-        updatePlayer(deltaTime); 
-        if(radarBlipsContainer) radarBlipsContainer.innerHTML = ''; 
-        if(radarPlayerArrow) radarPlayerArrow.style.transform = `translate(-50%, -100%) rotate(0deg)`; 
-        if(sunGlareOverlay) sunGlareOverlay.style.opacity = 0; 
-    } 
-    updateEffects(deltaTime); 
-    updateCamera(deltaTime); 
-    renderer.render(scene, camera); 
-    requestAnimationFrame(animate); 
+        updateTargets(deltaTime);
+        updateBullets(deltaTime);
+        updateRockets(deltaTime); // Update rockets and check collisions
+        updateEnemyBullets(deltaTime);
+        updateAudio(deltaTime);
+        updateUI(deltaTime);
+        updateRadar(deltaTime);
+    } else {
+        // Game Over state updates
+        updatePlayer(deltaTime); // Continue player falling animation
+        if(radarBlipsContainer) radarBlipsContainer.innerHTML = '';
+        if(radarPlayerArrow) radarPlayerArrow.style.transform = `translate(-50%, -100%) rotate(0deg)`;
+        if(sunGlareOverlay) sunGlareOverlay.style.opacity = 0;
+    }
+    // Update effects regardless of game state
+    updateEffects(deltaTime);
+    // Update camera regardless of game state
+    updateCamera(deltaTime);
+
+    // Render scene
+    renderer.render(scene, camera);
+    // Request next frame
+    requestAnimationFrame(animate);
 }
-        // --- Start ---
         init();
     </script>
 </body>
