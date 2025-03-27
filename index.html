@@ -65,6 +65,7 @@
 
     <script type="module">
         import * as THREE from 'three';
+        import { InstancedMesh } from 'three';
 
         // --- Game State, Core Three.js, Player Base Vars ---
         let isGameOver = false; let score = 0; let planeHealth = 100; const MAX_HEALTH = 100;
@@ -314,96 +315,112 @@ function init() {
         }
 
         // --- createInstancedGroundObjects ---
-        function createInstancedGroundObjects(maxTrees, maxBuildings) { 
-            const treeTopR = 1.5, treeTopH = 5, treeTrunkR = 0.4, treeTrunkH = 3; 
-            const treeTopGeo = new THREE.ConeGeometry(treeTopR, treeTopH, 6); 
-            const treeTrunkGeo = new THREE.CylinderGeometry(treeTrunkR, treeTrunkR, treeTrunkH, 5); 
-            const treeTopMat = new THREE.MeshStandardMaterial({ color: 0x228B22, roughness: 0.8 }); 
-            const treeTrunkMat = new THREE.MeshStandardMaterial({ color: 0x8B4513, roughness: 0.9 }); 
-            const buildingGeo = new THREE.BoxGeometry(1,1,1); 
-            const buildingMat = new THREE.MeshStandardMaterial({ color: 0xaaaaaa, roughness: 0.8 }); 
-            const buildingMatDarker = new THREE.MeshStandardMaterial({ color: 0x888888, roughness: 0.75 }); 
-            instancedTreeTrunks = new THREE.InstancedMesh(treeTrunkGeo, treeTrunkMat, maxTrees); 
-            instancedTreeTops = new THREE.InstancedMesh(treeTopGeo, treeTopMat, maxTrees); 
-            instancedBuildings = new THREE.InstancedMesh(buildingGeo, buildingMat, maxBuildings); 
-            instancedBuildingsDark = new THREE.InstancedMesh(buildingGeo, buildingMatDarker, maxBuildings); 
-            instancedTreeTrunks.castShadow = true; 
-            instancedTreeTrunks.receiveShadow = true; 
-            instancedTreeTops.castShadow = true; 
-            instancedTreeTops.receiveShadow = true; 
-            instancedBuildings.castShadow = true; 
-            instancedBuildings.receiveShadow = true; 
-            instancedBuildingsDark.castShadow = true; 
-            instancedBuildingsDark.receiveShadow = true; 
-            const dummy = new THREE.Object3D(); 
-            const trunkMatrix = new THREE.Matrix4(); 
-            const topMatrix = new THREE.Matrix4(); 
-            let treeCount = 0; 
-            let buildingCount = 0; 
-            let darkBuildingCount = 0; 
-            const objectPlacementRadius = 1.0; 
-            const isTooCloseToRiver = (px, pz) => { 
-                for (const path of allRiverPaths) { 
-                    for (let i = 0; i < path.length - 1; i++) { 
-                        const distSq = pointToLineSegmentDistanceSq(px, pz, path[i].x, path[i].y, path[i+1].x, path[i+1].y); 
-                        if (distSq < (riverCollisionPadding + objectPlacementRadius)**2) return true; 
-                    } 
-                } 
-                return false; 
-            }; 
-            for (let i = 0; i < maxTrees * 5 && treeCount < maxTrees; i++) { 
-                const posX = (Math.random() - 0.5) * worldRadius * 1.9; 
-                const posZ = (Math.random() - 0.5) * worldRadius * 1.9; 
-                const inCity = isPointInPolygon(posX, posZ, cityPolygon); 
-                if (isTooCloseToRiver(posX, posZ)) continue; 
-                if (inCity && Math.random() > 0.05) continue; 
-                if (!inCity && Math.random() > 0.5) continue; 
-                dummy.position.set(posX, groundLevel, posZ); 
-                dummy.rotation.y = Math.random() * Math.PI * 2; 
-                dummy.scale.setScalar(0.8 + Math.random() * 0.4); 
-                dummy.updateMatrix(); 
-                trunkMatrix.makeTranslation(0, treeTrunkH / 2, 0); 
-                trunkMatrix.premultiply(dummy.matrix); 
-                instancedTreeTrunks.setMatrixAt(treeCount, trunkMatrix); 
-                topMatrix.makeTranslation(0, treeTrunkH + treeTopH / 2, 0); 
-                topMatrix.premultiply(dummy.matrix); 
-                instancedTreeTops.setMatrixAt(treeCount, topMatrix); 
-                treeCount++; 
-            } 
-            instancedTreeTrunks.count = treeCount; 
-            instancedTreeTops.count = treeCount; 
-            instancedTreeTrunks.instanceMatrix.needsUpdate = true; 
-            instancedTreeTops.instanceMatrix.needsUpdate = true; 
-            for (let i = 0; i < maxBuildings * 5 && (buildingCount + darkBuildingCount < maxBuildings); i++) { 
-                const posX = (Math.random() - 0.5) * worldRadius * 1.9; 
-                const posZ = (Math.random() - 0.5) * worldRadius * 1.9; 
-                const inCity = isPointInPolygon(posX, posZ, cityPolygon); 
-                if (isTooCloseToRiver(posX, posZ)) continue; 
-                if (!inCity && Math.random() > 0.15) continue; 
-                const scaleX = Math.random() * 6 + 4; 
-                const scaleY = inCity ? Math.random() * 15 + 8 : Math.random() * 7 + 5; 
-                const scaleZ = Math.random() * 6 + 4; 
-                dummy.position.set(posX, groundLevel + scaleY / 2, posZ); 
-                dummy.rotation.y = Math.random() > 0.8 ? (Math.PI/4 * (Math.random() > 0.5 ? 1 : -1)) : (Math.random() > 0.6 ? Math.PI/2 : 0); 
-                dummy.scale.set(scaleX, scaleY, scaleZ); 
-                dummy.updateMatrix(); 
-                if (Math.random() > 0.3 && buildingCount < maxBuildings) { 
-                    instancedBuildings.setMatrixAt(buildingCount++, dummy.matrix); 
-                } else if (darkBuildingCount < maxBuildings) { 
-                    instancedBuildingsDark.setMatrixAt(darkBuildingCount++, dummy.matrix); 
-                } 
-            } 
-            instancedBuildings.count = buildingCount; 
-            instancedBuildingsDark.count = darkBuildingCount; 
-            instancedBuildings.instanceMatrix.needsUpdate = true; 
-            instancedBuildingsDark.instanceMatrix.needsUpdate = true; 
-            scene.add(instancedTreeTrunks); 
-            scene.add(instancedTreeTops); 
-            scene.add(instancedBuildings); 
-            scene.add(instancedBuildingsDark); 
-            console.log(`Created ${treeCount} instanced trees and ${buildingCount + darkBuildingCount} instanced buildings.`); 
-        }
+// --- createInstancedGroundObjects ---
+function createInstancedGroundObjects(maxTrees, maxBuildings) {
+    const treeTopR = 1.5, treeTopH = 5, treeTrunkR = 0.4, treeTrunkH = 3;
+    const treeTopGeo = new THREE.ConeGeometry(treeTopR, treeTopH, 6);
+    const treeTrunkGeo = new THREE.CylinderGeometry(treeTrunkR, treeTrunkR, treeTrunkH, 5);
+    const treeTopMat = new THREE.MeshStandardMaterial({ color: 0x228B22, roughness: 0.8 });
+    const treeTrunkMat = new THREE.MeshStandardMaterial({ color: 0x8B4513, roughness: 0.9 });
+    const buildingGeo = new THREE.BoxGeometry(1,1,1);
+    const buildingMat = new THREE.MeshStandardMaterial({ color: 0xaaaaaa, roughness: 0.8 });
+    const buildingMatDarker = new THREE.MeshStandardMaterial({ color: 0x888888, roughness: 0.75 });
 
+    // --- Use the explicitly imported InstancedMesh ---
+    instancedTreeTrunks = new InstancedMesh(treeTrunkGeo, treeTrunkMat, maxTrees);
+    instancedTreeTops = new InstancedMesh(treeTopGeo, treeTopMat, maxTrees);
+    instancedBuildings = new InstancedMesh(buildingGeo, buildingMat, maxBuildings);
+    instancedBuildingsDark = new InstancedMesh(buildingGeo, buildingMatDarker, maxBuildings);
+    // --- End change ---
+
+    instancedTreeTrunks.castShadow = true;
+    instancedTreeTrunks.receiveShadow = true;
+    instancedTreeTops.castShadow = true;
+    instancedTreeTops.receiveShadow = true;
+    instancedBuildings.castShadow = true;
+    instancedBuildings.receiveShadow = true;
+    instancedBuildingsDark.castShadow = true;
+    instancedBuildingsDark.receiveShadow = true;
+
+    const dummy = new THREE.Object3D();
+    const trunkMatrix = new THREE.Matrix4();
+    const topMatrix = new THREE.Matrix4();
+    let treeCount = 0;
+    let buildingCount = 0;
+    let darkBuildingCount = 0;
+    const objectPlacementRadius = 1.0;
+
+    const isTooCloseToRiver = (px, pz) => {
+        for (const path of allRiverPaths) {
+            for (let i = 0; i < path.length - 1; i++) {
+                const distSq = pointToLineSegmentDistanceSq(px, pz, path[i].x, path[i].y, path[i+1].x, path[i+1].y);
+                if (distSq < (riverCollisionPadding + objectPlacementRadius)**2) return true;
+            }
+        }
+        return false;
+    };
+
+    for (let i = 0; i < maxTrees * 5 && treeCount < maxTrees; i++) {
+        const posX = (Math.random() - 0.5) * worldRadius * 1.9;
+        const posZ = (Math.random() - 0.5) * worldRadius * 1.9;
+        const inCity = isPointInPolygon(posX, posZ, cityPolygon);
+        if (isTooCloseToRiver(posX, posZ)) continue;
+        if (inCity && Math.random() > 0.05) continue;
+        if (!inCity && Math.random() > 0.5) continue;
+
+        dummy.position.set(posX, groundLevel, posZ);
+        dummy.rotation.y = Math.random() * Math.PI * 2;
+        dummy.scale.setScalar(0.8 + Math.random() * 0.4);
+        dummy.updateMatrix();
+
+        trunkMatrix.makeTranslation(0, treeTrunkH / 2, 0);
+        trunkMatrix.premultiply(dummy.matrix);
+        instancedTreeTrunks.setMatrixAt(treeCount, trunkMatrix);
+
+        topMatrix.makeTranslation(0, treeTrunkH + treeTopH / 2, 0);
+        topMatrix.premultiply(dummy.matrix);
+        instancedTreeTops.setMatrixAt(treeCount, topMatrix);
+        treeCount++;
+    }
+    instancedTreeTrunks.count = treeCount;
+    instancedTreeTops.count = treeCount;
+    instancedTreeTrunks.instanceMatrix.needsUpdate = true;
+    instancedTreeTops.instanceMatrix.needsUpdate = true;
+
+    for (let i = 0; i < maxBuildings * 5 && (buildingCount + darkBuildingCount < maxBuildings); i++) {
+        const posX = (Math.random() - 0.5) * worldRadius * 1.9;
+        const posZ = (Math.random() - 0.5) * worldRadius * 1.9;
+        const inCity = isPointInPolygon(posX, posZ, cityPolygon);
+        if (isTooCloseToRiver(posX, posZ)) continue;
+        if (!inCity && Math.random() > 0.15) continue;
+
+        const scaleX = Math.random() * 6 + 4;
+        const scaleY = inCity ? Math.random() * 15 + 8 : Math.random() * 7 + 5;
+        const scaleZ = Math.random() * 6 + 4;
+
+        dummy.position.set(posX, groundLevel + scaleY / 2, posZ);
+        dummy.rotation.y = Math.random() > 0.8 ? (Math.PI/4 * (Math.random() > 0.5 ? 1 : -1)) : (Math.random() > 0.6 ? Math.PI/2 : 0);
+        dummy.scale.set(scaleX, scaleY, scaleZ);
+        dummy.updateMatrix();
+
+        if (Math.random() > 0.3 && buildingCount < maxBuildings) {
+            instancedBuildings.setMatrixAt(buildingCount++, dummy.matrix);
+        } else if (darkBuildingCount < maxBuildings) {
+            instancedBuildingsDark.setMatrixAt(darkBuildingCount++, dummy.matrix);
+        }
+    }
+    instancedBuildings.count = buildingCount;
+    instancedBuildingsDark.count = darkBuildingCount;
+    instancedBuildings.instanceMatrix.needsUpdate = true;
+    instancedBuildingsDark.instanceMatrix.needsUpdate = true;
+
+    // Add directly to the scene, not cityFeatures
+    scene.add(instancedTreeTrunks);
+    scene.add(instancedTreeTops);
+    scene.add(instancedBuildings);
+    scene.add(instancedBuildingsDark);
+    console.log(`Created ${treeCount} instanced trees and ${buildingCount + darkBuildingCount} instanced buildings.`);
+}
         // --- createRivers, createLandmarks, createBridges ---
         function createRivers() { 
             const riverMaterial = new THREE.MeshStandardMaterial({ color: 0x335599, roughness: 0.6, metalness: 0.1, side: THREE.DoubleSide }); 
