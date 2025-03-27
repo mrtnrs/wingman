@@ -65,7 +65,6 @@
 
     <script type="module">
         import * as THREE from 'three';
-        import { InstancedMesh } from 'three';
 
         // --- Game State, Core Three.js, Player Base Vars ---
         let isGameOver = false; let score = 0; let planeHealth = 100; const MAX_HEALTH = 100;
@@ -316,6 +315,7 @@ function init() {
 
         // --- createInstancedGroundObjects ---
 // --- createInstancedGroundObjects ---
+// --- createInstancedGroundObjects ---
 function createInstancedGroundObjects(maxTrees, maxBuildings) {
     const treeTopR = 1.5, treeTopH = 5, treeTrunkR = 0.4, treeTrunkH = 3;
     const treeTopGeo = new THREE.ConeGeometry(treeTopR, treeTopH, 6);
@@ -326,11 +326,12 @@ function createInstancedGroundObjects(maxTrees, maxBuildings) {
     const buildingMat = new THREE.MeshStandardMaterial({ color: 0xaaaaaa, roughness: 0.8 });
     const buildingMatDarker = new THREE.MeshStandardMaterial({ color: 0x888888, roughness: 0.75 });
 
-    // --- Use the explicitly imported InstancedMesh ---
-    instancedTreeTrunks = new InstancedMesh(treeTrunkGeo, treeTrunkMat, maxTrees);
-    instancedTreeTops = new InstancedMesh(treeTopGeo, treeTopMat, maxTrees);
-    instancedBuildings = new InstancedMesh(buildingGeo, buildingMat, maxBuildings);
-    instancedBuildingsDark = new InstancedMesh(buildingGeo, buildingMatDarker, maxBuildings);
+    // --- Revert to using THREE.InstancedMesh ---
+    // Ensure THREE object is fully loaded before this runs. Standard module scripts usually handle this.
+    instancedTreeTrunks = new THREE.InstancedMesh(treeTrunkGeo, treeTrunkMat, maxTrees);
+    instancedTreeTops = new THREE.InstancedMesh(treeTopGeo, treeTopMat, maxTrees);
+    instancedBuildings = new THREE.InstancedMesh(buildingGeo, buildingMat, maxBuildings);
+    instancedBuildingsDark = new THREE.InstancedMesh(buildingGeo, buildingMatDarker, maxBuildings);
     // --- End change ---
 
     instancedTreeTrunks.castShadow = true;
@@ -384,8 +385,9 @@ function createInstancedGroundObjects(maxTrees, maxBuildings) {
     }
     instancedTreeTrunks.count = treeCount;
     instancedTreeTops.count = treeCount;
-    instancedTreeTrunks.instanceMatrix.needsUpdate = true;
-    instancedTreeTops.instanceMatrix.needsUpdate = true;
+    if(instancedTreeTrunks.count > 0) instancedTreeTrunks.instanceMatrix.needsUpdate = true; // Check count > 0 before update
+    if(instancedTreeTops.count > 0) instancedTreeTops.instanceMatrix.needsUpdate = true; // Check count > 0 before update
+
 
     for (let i = 0; i < maxBuildings * 5 && (buildingCount + darkBuildingCount < maxBuildings); i++) {
         const posX = (Math.random() - 0.5) * worldRadius * 1.9;
@@ -411,8 +413,9 @@ function createInstancedGroundObjects(maxTrees, maxBuildings) {
     }
     instancedBuildings.count = buildingCount;
     instancedBuildingsDark.count = darkBuildingCount;
-    instancedBuildings.instanceMatrix.needsUpdate = true;
-    instancedBuildingsDark.instanceMatrix.needsUpdate = true;
+    if(instancedBuildings.count > 0) instancedBuildings.instanceMatrix.needsUpdate = true; // Check count > 0 before update
+    if(instancedBuildingsDark.count > 0) instancedBuildingsDark.instanceMatrix.needsUpdate = true; // Check count > 0 before update
+
 
     // Add directly to the scene, not cityFeatures
     scene.add(instancedTreeTrunks);
@@ -421,7 +424,6 @@ function createInstancedGroundObjects(maxTrees, maxBuildings) {
     scene.add(instancedBuildingsDark);
     console.log(`Created ${treeCount} instanced trees and ${buildingCount + darkBuildingCount} instanced buildings.`);
 }
-        // --- createRivers, createLandmarks, createBridges ---
         function createRivers() { 
             const riverMaterial = new THREE.MeshStandardMaterial({ color: 0x335599, roughness: 0.6, metalness: 0.1, side: THREE.DoubleSide }); 
             const canalMaterial = new THREE.MeshStandardMaterial({ color: 0x4060A0, roughness: 0.5, metalness: 0.1, side: THREE.DoubleSide }); 
