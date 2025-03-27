@@ -145,6 +145,7 @@
 
         // --- Initialization ---
 // --- Initialization ---
+// --- Initialization ---
 function init() {
     isGameOver = false; score = 0; planeHealth = MAX_HEALTH; currentSpeedFactor = 1.0; currentCooldown = 0;
     cameraShakeIntensity = 0; currentShakeTime = 0; playerHitFlashTime = 0; currentPitchRate = 0; currentYawRate = 0;
@@ -153,10 +154,16 @@ function init() {
     bullets.length = 0; enemyBullets.length = 0; targets.length = 0; enemies.length = 0; bombers.length = 0;
     bombs.length = 0; activeEffects.length = 0; wingmen.length = 0; rockets.length = 0; // Clear wingmen and rockets
     currentRocketCooldown = 0; // Reset rocket cooldown
-    cityFeatures.clear();
-    if (instancedBuildings) scene?.remove(instancedBuildings); if (instancedBuildingsDark) scene?.remove(instancedBuildingsDark);
-    if (instancedTreeTrunks) scene?.remove(instancedTreeTrunks); if (instancedTreeTops) scene?.remove(instancedTreeTops);
+    // cityFeatures.clear(); // <-- REMOVE THIS LINE - THREE.Group has no .clear() method
+
+    // Clear any potential leftover children from the group object itself JUST IN CASE,
+    // although restartGame should handle this. This is defensive.
+    while (cityFeatures && cityFeatures.children.length > 0) {
+        cityFeatures.remove(cityFeatures.children[0]);
+    }
+    // Reset references to instanced meshes
     instancedBuildings = instancedBuildingsDark = instancedTreeTrunks = instancedTreeTops = null;
+
 
     scene = new THREE.Scene(); clock = new THREE.Clock();
     camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.01, 6000);
@@ -182,11 +189,11 @@ function init() {
     setupLightingAndSun();
     createGround();
     createSky();
-    createInstancedGroundObjects(5000, 800);
-    createRivers();
-    createLandmarks();
-    createBridges();
-    scene.add(cityFeatures);
+    createInstancedGroundObjects(5000, 800); // These add directly to the scene now
+    createRivers();      // These add to cityFeatures
+    createLandmarks();   // These add to cityFeatures
+    createBridges();     // These add to cityFeatures
+    scene.add(cityFeatures); // Add the (now empty) group to the scene
     scene.add(airplane);
 
     // --- Create Wingmen ---
@@ -204,7 +211,10 @@ function init() {
         wingman.userData = {
             isWingman: true,
             shootDelayTimer: 0,
-            cooldown: 0
+            cooldown: 0,
+            rocketDelayTimer: 0, // Initialize rocket timer
+            isWaitingToShoot: false,
+            isWaitingToFireRocket: false
         };
 
         scene.add(wingman);
@@ -223,8 +233,7 @@ function init() {
     startPromptElement.style.display = audioInitialized ? 'none' : 'block';
     setupEventListeners();
     animate();
-}
-        // --- setupLightingAndSun, createSunTexture ---
+}     // --- setupLightingAndSun, createSunTexture ---
         function setupLightingAndSun() { 
             scene.add(new THREE.AmbientLight(0xeeeeff, 1.1)); 
             sunLight = new THREE.DirectionalLight(0xffffff, 3.5); 
